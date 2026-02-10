@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+*.log
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+app/.env
+
+# OS
+.DS_Store
+
+# Node / Playwright (future)
+node_modules/
+playwright-report/
+test-results/
