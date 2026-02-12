@@ -1,21 +1,22 @@
 # Python
+.venv/
 __pycache__/
 *.pyc
-*.log
 
-# Virtual environments
-.venv/
-venv/
-env/
-
-# Environment files
+# Environment variables
 .env
 app/.env
+playwright-tests/.env
 
-# OS
-.DS_Store
-
-# Node / Playwright (future)
+# Node
 node_modules/
+package-lock.json
+
+# Playwright
 playwright-report/
 test-results/
+blob-report/
+
+# Mac
+.DS_Store
+
