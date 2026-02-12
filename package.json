@@ -1,0 +1,20 @@
+{
+  "name": "ai-qa-engine",
+  "version": "1.0.0",
+  "description": "AI-driven QA Automation Platform (QAP) that converts Jira tickets into: - Manual test scenarios - High-value automation candidates - Playwright test names - Security-minded QA notes",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "dotenv": "^17.2.4"
+  }
+}
