@@ -1,5 +1,6 @@
 import os
 import json
+import warnings
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import requests
@@ -8,7 +9,14 @@ from requests.auth import HTTPBasicAuth
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
+
+warnings.filterwarnings(
+    "ignore",
+    message=".*google\\.generativeai.*has ended.*",
+    category=FutureWarning,
+)
 import google.generativeai as genai
+
 
 
 
