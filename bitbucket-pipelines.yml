@@ -1,0 +1,15 @@
+image: node:20
+
+pipelines:
+  pull-requests:
+    "**":
+      - step:
+          name: Run Playwright Tests
+          caches:
+            - node
+          script:
+            - cd playwright-tests
+            - npm ci || npm install
+            - npx playwright install --with-deps
+            - BASE_URL=https://the-internet.herokuapp.com TEST_USER=tomsmith TEST_PASS=SuperSecretPassword! npm test
+
