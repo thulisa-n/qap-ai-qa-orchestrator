@@ -4,6 +4,7 @@ import warnings
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import requests
+import traceback
 from requests.auth import HTTPBasicAuth
 
 from fastapi import FastAPI, HTTPException
@@ -27,6 +28,7 @@ load_dotenv(ENV_PATH)
 api_key = os.getenv("GEMINI_API_KEY")
 
 
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     raise RuntimeError("Missing GEMINI_API_KEY in environment (.env)")
@@ -41,6 +43,11 @@ app = FastAPI(title="AI QA Engine")
 class GenerateTestsRequest(BaseModel):
     acceptanceCriteria: str = Field(validation_alias="acceptance_criteria")
     context: str | None = None
+
+class FileItem(BaseModel):
+    path: str
+    content: str
+
 
 
 # -----------------------------
@@ -60,6 +67,37 @@ class GenerateBothRequest(BaseModel):
     acceptanceCriteria: str
     context: str | None = None
     baseUrl: str | None = None
+
+class JiraAutomationTaskRequest(BaseModel):
+    parentIssueKey: str | None = None  # optional, only needed if you want Sub-task
+    issueType: str = "Task"            # "Task" or "Sub-task"
+    acceptanceCriteria: str
+    context: str | None = None
+    baseUrl: str | None = None
+
+class FullQAFlowRequest(BaseModel):
+    issueKey: str
+    acceptanceCriteria: str
+    context: str | None = None
+    baseUrl: str | None = None
+
+    # toggles
+    commentOnJira: bool = True
+    writePlaywrightFiles: bool = True
+    createAutomationTask: bool = True
+
+    # task config
+    automationIssueType: str = "Task"
+    automationSummaryPrefix: str = "Automation: Implement generated Playwright tests"
+
+
+class FullQAFlowResponse(BaseModel):
+    scenarios: Dict[str, Any]
+    playwright: Dict[str, Any]
+    jiraComment: Dict[str, Any] | None = None
+    filesWritten: Dict[str, Any] | None = None
+    automationTask: Dict[str, Any] | None = None
+
 
 # -----------------------------
 # Response Models (Best practice)
@@ -188,17 +226,66 @@ def format_tests_for_jira(tests: GenerateTestsResponse) -> str:
 
     return "\n".join(lines)
 
-def write_playwright_files(files: List[Dict[str, str]]) -> List[str]:
+def write_playwright_files(files: List[FileItem]) -> List[str]:
     base_dir = Path(__file__).resolve().parent.parent.parent / "playwright-tests"
     created_files = []
 
     for f in files:
-        path = base_dir / f["path"]
+        path = base_dir / f.path
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(f["content"], encoding="utf-8")
+        path.write_text(f.content, encoding="utf-8")
         created_files.append(str(path))
 
     return created_files
+
+
+
+def jira_create_issue(summary: str, description: str, issue_type: str = "Task", parent_key: str | None = None):
+    base = os.getenv("JIRA_BASE_URL")
+    email = os.getenv("JIRA_EMAIL")
+    token = os.getenv("JIRA_API_TOKEN")
+    project_key = os.getenv("JIRA_PROJECT_KEY")
+
+    if not all([base, email, token, project_key]):
+        raise RuntimeError("Jira env vars missing (JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_PROJECT_KEY)")
+
+    url = f"{base}/rest/api/3/issue"
+
+    fields = {
+        "project": {"key": project_key},
+        "summary": summary,
+        "issuetype": {"name": issue_type},
+        "description": _to_adf(description),
+    }
+
+    # If you're using Sub-task, Jira requires a parent issue
+    if issue_type.lower() in ["sub-task", "subtask"] and parent_key:
+        fields["parent"] = {"key": parent_key}
+
+    resp = requests.post(
+        url,
+        json={"fields": fields},
+        auth=HTTPBasicAuth(email, token),
+        headers={"Accept": "application/json", "Content-Type": "application/json"},
+        timeout=30,
+    )
+
+    if resp.status_code >= 300:
+        raise RuntimeError(f"Jira error {resp.status_code}: {resp.text}")
+
+    return resp.json()
+
+def jira_auth():
+    base = os.getenv("JIRA_BASE_URL")
+    email = os.getenv("JIRA_EMAIL")
+    token = os.getenv("JIRA_API_TOKEN")
+    if not base or not email or not token:
+        raise RuntimeError("Missing Jira env vars. Ensure JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN are set in app/.env")
+    return base.rstrip("/"), email, token
+
+
+
+
 
 
 
@@ -422,10 +509,13 @@ def generate_both_endpoint(payload: GenerateBothRequest) -> GenerateBothResponse
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
+def jira_comment_test(issue_key: str, comment: str) -> Dict[str, Any]:
+    jira_add_comment(issue_key, comment)
+    return {"status": "comment_added", "issueKey": issue_key}
 @app.post("/jira/comment-tests", operation_id="jira_comment_tests")
 def jira_comment_tests_endpoint(payload: JiraCommentRequest):
     try:
-        # Generate tests
+        # Generate tests (keep this for convenience)
         prompt = build_tests_prompt(payload.acceptanceCriteria, payload.context)
         raw = call_llm(prompt)
         text = _clean_json_text(raw)
@@ -434,13 +524,12 @@ def jira_comment_tests_endpoint(payload: JiraCommentRequest):
         # Format
         comment = format_tests_for_jira(tests)
 
-        # Send to Jira
-        jira_add_comment(payload.issueKey, comment)
-
-        return {"status": "comment_added"}
+        # Send to Jira (via internal helper)
+        return jira_comment_test(payload.issueKey, comment)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/playwright/write-files", operation_id="playwright_write_files")
 def playwright_write_files_endpoint(payload: GeneratePlaywrightRequest):
@@ -470,6 +559,117 @@ def playwright_write_files_endpoint(payload: GeneratePlaywrightRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/jira/create-automation-task", operation_id="jira_create_automation_task")
+def jira_create_automation_task_endpoint(payload: JiraAutomationTaskRequest):
+    try:
+        # Generate tests + playwright in one go (recommended)
+        tests_prompt = build_tests_prompt(payload.acceptanceCriteria, payload.context)
+        tests_text = _clean_json_text(call_llm(tests_prompt))
+        tests = GenerateTestsResponse.model_validate_json(tests_text)
+
+        pw_prompt = build_playwright_prompt(payload.acceptanceCriteria, payload.context, payload.baseUrl)
+        pw_text = _clean_json_text(call_llm(pw_prompt))
+        pw = GeneratePlaywrightResponse.model_validate_json(pw_text)
+
+        # Build a clean description for Jira
+        desc_lines = []
+        desc_lines.append("AI Generated Test Scenarios")
+        desc_lines.append("--------------------------")
+        for s in tests.scenarios:
+            desc_lines.append(f"\n{s.id} — {s.title}")
+            desc_lines.append(f"Priority: {s.priority} | Type: {s.type}")
+            desc_lines.append("Steps:")
+            for i, step in enumerate(s.steps, 1):
+                desc_lines.append(f"{i}. {step.action}")
+
+        desc_lines.append("\n\nGenerated Playwright Files")
+        desc_lines.append("-------------------------")
+        for f in pw.files:
+            desc_lines.append(f"- {f.path}")
+
+        if pw.notes:
+            desc_lines.append("\nNotes")
+            desc_lines.append("-----")
+            desc_lines.extend([f"- {n}" for n in pw.notes])
+
+        description = "\n".join(desc_lines)
+
+        summary = "Automation: Generate Playwright tests from acceptance criteria"
+
+        created = jira_create_issue(
+            summary=summary,
+            description=description,
+            issue_type=payload.issueType,
+            parent_key=payload.parentIssueKey,
+        )
+
+        return {"status": "created", "issue": created}
+
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+class FullQAFlowRequest(BaseModel):
+    issueKey: str
+    acceptanceCriteria: str
+    context: str | None = None
+    baseUrl: str | None = None
+    writePlaywrightFiles: bool = True
+    createAutomationTask: bool = True
+    automationIssueType: str = "Task"
+
+
+@app.post("/jira/full-qa-flow", operation_id="jira_full_qa_flow")
+def jira_full_qa_flow(payload: FullQAFlowRequest):
+    try:
+        # A) Generate tests (once)
+        tests_prompt = build_tests_prompt(payload.acceptanceCriteria, payload.context)
+        tests_raw = call_llm(tests_prompt)
+        tests_text = _clean_json_text(tests_raw)
+        tests = GenerateTestsResponse.model_validate_json(tests_text)
+
+        # B) Comment tests to Jira
+        comment = format_tests_for_jira(tests)
+        jira_comment_test(payload.issueKey, comment)
+
+        # C) Generate Playwright (once)
+        pw_prompt = build_playwright_prompt(payload.acceptanceCriteria, payload.context, payload.baseUrl)
+        pw_raw = call_llm(pw_prompt)
+        pw_text = _clean_json_text(pw_raw)
+        playwright = GeneratePlaywrightResponse.model_validate_json(pw_text)
+
+        # D) Optionally write files
+        files_written = None
+        if payload.writePlaywrightFiles:
+            files_written = write_playwright_files(playwright.files)  # use your existing internal fn
+
+        # E) Optionally create Jira automation task
+        task_created = None
+        if payload.createAutomationTask:
+            summary = f"{payload.issueKey} | Automation: Implement Playwright tests"
+            description = "Generated Playwright tests are ready.\n\nFiles:\n" + "\n".join(
+                f"- {f.path}" for f in playwright.files
+            )
+            task_created = jira_create_task(
+                summary=summary,
+                description=description,
+                issue_type=payload.automationIssueType,
+                parent_key=payload.issueKey,
+            )
+
+        return {
+            "status": "ok",
+            "jiraComment": {"issueKey": payload.issueKey},
+            "tests": tests.model_dump(),
+            "playwright": playwright.model_dump(),
+            "filesWritten": files_written,
+            "automationTask": task_created,
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 
