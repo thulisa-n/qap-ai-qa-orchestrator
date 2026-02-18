@@ -259,6 +259,41 @@ Pull requests run:
 - backend API/security regression tests (`pytest`)
 - Playwright UI tests
 
+## Running generated Playwright tests (human-in-the-loop)
+Generated tests are a starting point. A QA/SDET should always review and refine selectors/assertions.
+
+### Example flow using a generated task file
+1. Copy generated file (if written to `app/playwright-tests`) into runnable suite:
+
+```bash
+cp app/playwright-tests/tests/auth.spec.js playwright-tests/tests/auth.spec.js
+```
+
+2. Install browser binaries (one-time per environment):
+
+```bash
+cd playwright-tests
+npx playwright install
+```
+
+3. Run the generated spec against the demo app:
+
+```bash
+BASE_URL=https://the-internet.herokuapp.com TEST_USER=tomsmith TEST_PASS=SuperSecretPassword! npx playwright test tests/auth.spec.js
+```
+
+### Expected result for this PoC demo
+- 2 tests pass (valid login + invalid password)
+- 1 test skipped (locked-account scenario is not supported by `the-internet.herokuapp.com`)
+
+### Common errors and how to fix them
+- **`ERR_NGROK_3200` (endpoint offline)**: ngrok tunnel is not running or URL changed. Restart `ngrok http 8000` and update Jira rule URL.
+- **`401 Unauthorized`**: `X-API-Key` in Jira does not match `API_AUTH_TOKEN` in `app/.env` loaded by running API process. Update header value and restart API if token changed.
+- **`422 json_invalid` from webhook**: Jira smart value inserted raw control characters/newlines. Use `{{issue.description.asJsonString}}` in request body.
+- **Jira webhook timeout (30s)**: use `POST /jira/full-qa-flow-async` instead of sync endpoint.
+- **`browserType.launch: Executable doesn't exist`**: Playwright browsers not installed. Run `npx playwright install`.
+- **Selector timeout on generated tests**: AI used non-existent selectors (e.g., `data-testid`). Refine tests to real selectors (e.g., `#username`, `#password`, `#flash`) for target app.
+
 ## Architecture
 See `docs/architecture.md` for the service boundaries, scalability choices, and extension patterns.
 
