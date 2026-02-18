@@ -263,20 +263,14 @@ Pull requests run:
 Generated tests are a starting point. A QA/SDET should always review and refine selectors/assertions.
 
 ### Example flow using a generated task file
-1. Copy generated file (if written to `app/playwright-tests`) into runnable suite:
-
-```bash
-cp app/playwright-tests/tests/auth.spec.js playwright-tests/tests/auth.spec.js
-```
-
-2. Install browser binaries (one-time per environment):
+1. Install browser binaries (one-time per environment):
 
 ```bash
 cd playwright-tests
 npx playwright install
 ```
 
-3. Run the generated spec against the demo app:
+2. Run a generated/refined spec against the demo app:
 
 ```bash
 BASE_URL=https://the-internet.herokuapp.com TEST_USER=tomsmith TEST_PASS=SuperSecretPassword! npx playwright test tests/auth.spec.js
