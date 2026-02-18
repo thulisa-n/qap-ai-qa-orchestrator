@@ -4,7 +4,8 @@ from app.src.schemas import FileItem
 
 
 def write_playwright_files(files: list[FileItem]) -> list[str]:
-    base_dir = (Path(__file__).resolve().parent.parent.parent / "playwright-tests").resolve()
+    # Write generated specs to the root Playwright project used by CI and local runs.
+    base_dir = (Path(__file__).resolve().parents[3] / "playwright-tests").resolve()
     created_files: list[str] = []
 
     for file_item in files:
