@@ -6,6 +6,95 @@ AI-driven QA Automation Platform (QAP) that converts Jira tickets into:
 - Playwright test names
 - Security-minded QA notes
 
+## Start-to-Finish Quickstart (recommended)
+Use this section if you want a single guided path from setup to successful demo.
+
+### 1) Clone and install
+```bash
+git clone <your-repo-url>
+cd ai-qa-engine
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r app/requirements.txt
+```
+
+### 2) Configure environment
+```bash
+cp app/.env.example app/.env
+```
+Set in `app/.env`:
+- `GEMINI_API_KEY`
+- `JIRA_BASE_URL`
+- `JIRA_EMAIL`
+- `JIRA_API_TOKEN`
+- `JIRA_PROJECT_KEY`
+- `API_AUTH_TOKEN` (used by Jira header `X-API-Key`)
+
+### 3) Run the API
+```bash
+python -m uvicorn app.src.app:app --host 0.0.0.0 --port 8000
+```
+Keep this terminal open.
+
+### 4) Expose local API to Jira Cloud (ngrok)
+In a second terminal:
+```bash
+ngrok http 8000
+```
+Copy the HTTPS forwarding URL.
+
+### 5) Verify API + tunnel
+```bash
+curl -i http://127.0.0.1:8000/health
+curl -i https://<your-ngrok-url>/health
+```
+Both should return `200`.
+
+### 6) Create Jira Rule A (In QA trigger)
+Configure Jira Automation "Send web request" action:
+- Method: `POST`
+- URL: `https://<your-ngrok-url>/jira/full-qa-flow-async`
+- Headers:
+  - `Content-Type` = `application/json`
+  - `X-API-Key` = `<API_AUTH_TOKEN value>`
+- Body:
+```json
+{
+  "issueKey": "{{issue.key}}",
+  "acceptanceCriteria": {{issue.description.asJsonString}},
+  "context": "Triggered by Jira Automation when issue transitions to In QA",
+  "commentOnJira": true,
+  "writePlaywrightFiles": true,
+  "createAutomationTask": true,
+  "automationIssueType": "Task",
+  "automationSummaryPrefix": "Automation: Implement generated Playwright tests"
+}
+```
+
+### 7) Run the Jira flow
+1. Create a Jira ticket with acceptance criteria in the description.
+2. Move ticket to `In QA`.
+3. Confirm:
+   - Trigger comment appears
+   - Web request shows success in audit log
+   - AI Generated Test Scenarios comment appears
+   - AI Automation Decision comment appears
+   - Automation task is created when candidate is approved by decision logic
+
+### 8) Execute generated/refined Playwright test
+```bash
+cd playwright-tests
+npx playwright install
+BASE_URL=https://the-internet.herokuapp.com TEST_USER=tomsmith TEST_PASS=SuperSecretPassword! npx playwright test tests/auth.spec.js
+```
+
+### 9) Troubleshoot quickly
+- `401 Unauthorized`: Jira `X-API-Key` value does not match `API_AUTH_TOKEN`.
+- `422 json_invalid`: use `{{issue.description.asJsonString}}` in body.
+- ngrok `ERR_NGROK_3200`: tunnel offline/stale URL.
+- Playwright browser error: run `npx playwright install`.
+- Jira timeout: use `/jira/full-qa-flow-async` (not sync endpoint).
+
 ## Run locally
 1. Create and activate a virtual environment:
    - `python3 -m venv .venv`
@@ -263,20 +352,14 @@ Pull requests run:
 Generated tests are a starting point. A QA/SDET should always review and refine selectors/assertions.
 
 ### Example flow using a generated task file
-1. Copy generated file (if written to `app/playwright-tests`) into runnable suite:
-
-```bash
-cp app/playwright-tests/tests/auth.spec.js playwright-tests/tests/auth.spec.js
-```
-
-2. Install browser binaries (one-time per environment):
+1. Install browser binaries (one-time per environment):
 
 ```bash
 cd playwright-tests
 npx playwright install
 ```
 
-3. Run the generated spec against the demo app:
+2. Run a generated/refined spec against the demo app:
 
 ```bash
 BASE_URL=https://the-internet.herokuapp.com TEST_USER=tomsmith TEST_PASS=SuperSecretPassword! npx playwright test tests/auth.spec.js
