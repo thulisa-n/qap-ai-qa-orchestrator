@@ -385,3 +385,10 @@ See `docs/security-hardening-report.md` for implemented controls, residual risks
 
 ## PoC rollout guide
 See `docs/poc-implementation-guide.md` for Bitbucket sharing steps and Jira automation rule setup for `In QA` triggers.
+
+## AI helper prompt (PR summaries)
+Use this prompt when you want AI to generate a complete PR summary:
+
+```text
+Create a detailed PR summary from this branch: include context/problem, goals, architecture changes, endpoint changes, security updates, test/CI changes, docs updates, migration notes, risks/trade-offs, verification steps, and a clear “why this approach works” section.
+```
