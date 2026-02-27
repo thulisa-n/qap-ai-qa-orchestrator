@@ -138,7 +138,7 @@ To match the "AI assists, humans decide" workflow, use at least **2 rules** (3rd
 - Condition: Acceptance Criteria exists
 - Actions:
   - add "QA Automation Triggered (QAP)" comment
-  - call `POST /jira/full-qa-flow` with `X-API-Key`
+  - call `POST /jira/full-qa-flow-async` with `X-API-Key`
   - set labels like `qap-generated`, `qap-needs-review`
 - Behavior:
   - backend AI decides if automation should be created (`automationDecision`)
@@ -343,7 +343,7 @@ Expected PoC outcome:
 - avoids low-value brittle automation
 
 ## CI
-Pull requests run:
+Pull requests run the same core checks in Bitbucket Pipelines and GitHub Actions:
 - backend smoke checks (Python import/compile validation)
 - backend API/security regression tests (`pytest`)
 - Playwright UI tests
@@ -366,7 +366,7 @@ BASE_URL=https://the-internet.herokuapp.com TEST_USER=tomsmith TEST_PASS=SuperSe
 ```
 
 ### Expected result for this PoC demo
-- 2 tests pass (valid login + invalid password)
+- 3 tests pass (valid login + invalid password + sensitive URL check)
 - 1 test skipped (locked-account scenario is not supported by `the-internet.herokuapp.com`)
 
 ### Common errors and how to fix them

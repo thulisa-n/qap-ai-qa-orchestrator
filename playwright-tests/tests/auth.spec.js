@@ -39,6 +39,19 @@ test.describe('Authentication Tests', () => {
     });
   });
 
+  test('should not expose sensitive info in URL after failed login', async ({ page }) => {
+    const badPassword = 'invalid-password-123';
+    const user = process.env.TEST_USER || 'tomsmith';
+
+    await page.fill('#username', user);
+    await page.fill('#password', badPassword);
+    await page.click('button[type="submit"]');
+
+    await expect(page).not.toHaveURL(new RegExp(badPassword));
+    await expect(page.locator('#flash')).toContainText('Your password is invalid!');
+    await expect(page).toHaveURL(new RegExp(`${LOGIN_PATH}$`));
+  });
+
   test('should prevent login for a locked account and display an error (security test)', async ({ page }) => {
     test.skip(true, 'the-internet.herokuapp.com does not provide a lockout-account fixture to validate this scenario.');
   });
