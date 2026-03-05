@@ -24,6 +24,55 @@ The QAP Orchestrator follows a deterministic logic gate to bridge the gap betwee
 
 - Governance & Security: All outputs are validated against strict schemas to ensure syntax integrity and security-conscious test steps.
 
+## What Problem This Solves
+QA teams often spend too much time translating Jira Acceptance Criteria into test scenarios and deciding what should be automated first. This creates inconsistent coverage, missed edge cases, and slower feedback loops.
+
+QAP solves this by turning `In QA` tickets into structured QA outputs immediately, while keeping humans in control of approval and final quality decisions.
+
+## Demo in 60 Seconds
+1. Move a Jira ticket to `In QA`.
+2. Jira automation calls `POST /jira/full-qa-flow-async`.
+3. QAP generates:
+   - manual test scenarios (posted back to Jira)
+   - an AI automation decision with confidence/reason
+   - Playwright skeleton files
+4. If the ticket is a strong automation candidate, QAP creates and links an automation task.
+5. QA reviews and approves what gets implemented.
+
+Outcome: faster QA preparation, clearer automation prioritization, and traceable human-in-the-loop governance.
+
+## Visual Architecture Diagram
+```text
+Jira Ticket (Acceptance Criteria)
+              |
+              v
+      QAP FastAPI Orchestrator
+              |
+    +---------+---------+
+    |         |         |
+    v         v         v
+Scenario   Automation   Playwright
+Generator  Decision     Generator
+    |         |         |
+    +----+----+----+----+
+         |         |
+         v         v
+   Jira Comments   Linked Jira Automation Task + Test Files
+```
+
+## Tech Stack
+- Python + FastAPI
+- Pydantic (schema validation)
+- Gemini (`google-genai`) for AI reasoning/generation
+- Jira Cloud REST API + Jira Automation Webhooks
+- Playwright for browser automation skeletons
+- Pytest for backend/security regression tests
+- Bitbucket Pipelines + GitHub Actions for CI
+- ngrok for local webhook testing
+
+## Why This README Includes Troubleshooting
+This project integrates Jira, webhooks, AI APIs, and browser automation, so setup mistakes are common in real teams. The troubleshooting section is intentionally detailed to make onboarding fast, reduce demo friction, and help users self-recover from known errors (`401`, `422`, ngrok tunnel issues, Playwright browser install issues).
+
 ## Start-to-Finish Quickstart (recommended)
 Use this section if you want a single guided path from setup to successful demo.
 
@@ -158,7 +207,7 @@ To match the "AI assists, humans decide" workflow, use at least **2 rules** (3rd
 - Condition: Acceptance Criteria exists
 - Actions:
   - add "QA Automation Triggered (QAP)" comment
-  - call `POST /jira/full-qa-flow` with `X-API-Key`
+  - call `POST /jira/full-qa-flow-async` with `X-API-Key`
   - set labels like `qap-generated`, `qap-needs-review`
 - Behavior:
   - backend AI decides if automation should be created (`automationDecision`)
@@ -363,7 +412,7 @@ Expected PoC outcome:
 - avoids low-value brittle automation
 
 ## CI
-Pull requests run:
+Pull requests run the same core checks in Bitbucket Pipelines and GitHub Actions:
 - backend smoke checks (Python import/compile validation)
 - backend API/security regression tests (`pytest`)
 - Playwright UI tests
@@ -386,7 +435,7 @@ BASE_URL=https://the-internet.herokuapp.com TEST_USER=tomsmith TEST_PASS=SuperSe
 ```
 
 ### Expected result for this PoC demo
-- 2 tests pass (valid login + invalid password)
+- 3 tests pass (valid login + invalid password + sensitive URL check)
 - 1 test skipped (locked-account scenario is not supported by `the-internet.herokuapp.com`)
 
 ### Common errors and how to fix them
@@ -405,3 +454,10 @@ See `docs/security-hardening-report.md` for implemented controls, residual risks
 
 ## PoC rollout guide
 See `docs/poc-implementation-guide.md` for Bitbucket sharing steps and Jira automation rule setup for `In QA` triggers.
+
+## AI helper prompt (PR summaries)
+Use this prompt when you want AI to generate a complete PR summary:
+
+```text
+Create a detailed PR summary from this branch: include context/problem, goals, architecture changes, endpoint changes, security updates, test/CI changes, docs updates, migration notes, risks/trade-offs, verification steps, and a clear “why this approach works” section.
+```

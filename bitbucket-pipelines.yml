@@ -1,24 +1,38 @@
+definitions:
+  steps:
+    - step: &backend_smoke
+        name: Backend Smoke Checks
+        image: python:3.13
+        caches:
+          - pip
+        script:
+          - pip install -r app/requirements.txt
+          - python -m py_compile app/src/*.py app/src/routers/*.py app/src/services/*.py
+          - python -c "from app.src.app import app; print('FastAPI app import OK:', bool(app))"
+          - PYTHONPATH=. python -m pytest app/tests -q
+
+    - step: &playwright_tests
+        name: Run Playwright Tests
+        image: node:20
+        caches:
+          - node
+        script:
+          - cd playwright-tests
+          - npm ci || npm install
+          - npx playwright install --with-deps
+          - BASE_URL=https://the-internet.herokuapp.com TEST_USER=tomsmith TEST_PASS=SuperSecretPassword! npm test
+
 pipelines:
+  branches:
+    main:
+      - step: *backend_smoke
+      - step: *playwright_tests
+    "feature/*":
+      - step: *backend_smoke
+      - step: *playwright_tests
+
   pull-requests:
     "**":
-      - step:
-          name: Backend Smoke Checks
-          image: python:3.13
-          caches:
-            - pip
-          script:
-            - pip install -r app/requirements.txt
-            - python -m py_compile app/src/*.py app/src/routers/*.py app/src/services/*.py
-            - python -c "from app.src.app import app; print('FastAPI app import OK:', bool(app))"
-            - PYTHONPATH=. python -m pytest app/tests -q
-      - step:
-          name: Run Playwright Tests
-          image: node:20
-          caches:
-            - node
-          script:
-            - cd playwright-tests
-            - npm ci || npm install
-            - npx playwright install --with-deps
-            - BASE_URL=https://the-internet.herokuapp.com TEST_USER=tomsmith TEST_PASS=SuperSecretPassword! npm test
+      - step: *backend_smoke
+      - step: *playwright_tests
 
