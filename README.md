@@ -6,6 +6,55 @@ AI-driven QA Automation Platform (QAP) that converts Jira tickets into:
 - Playwright test names
 - Security-minded QA notes
 
+## What Problem This Solves
+QA teams often spend too much time translating Jira Acceptance Criteria into test scenarios and deciding what should be automated first. This creates inconsistent coverage, missed edge cases, and slower feedback loops.
+
+QAP solves this by turning `In QA` tickets into structured QA outputs immediately, while keeping humans in control of approval and final quality decisions.
+
+## Demo in 60 Seconds
+1. Move a Jira ticket to `In QA`.
+2. Jira automation calls `POST /jira/full-qa-flow-async`.
+3. QAP generates:
+   - manual test scenarios (posted back to Jira)
+   - an AI automation decision with confidence/reason
+   - Playwright skeleton files
+4. If the ticket is a strong automation candidate, QAP creates and links an automation task.
+5. QA reviews and approves what gets implemented.
+
+Outcome: faster QA preparation, clearer automation prioritization, and traceable human-in-the-loop governance.
+
+## Visual Architecture Diagram
+```text
+Jira Ticket (Acceptance Criteria)
+              |
+              v
+      QAP FastAPI Orchestrator
+              |
+    +---------+---------+
+    |         |         |
+    v         v         v
+Scenario   Automation   Playwright
+Generator  Decision     Generator
+    |         |         |
+    +----+----+----+----+
+         |         |
+         v         v
+   Jira Comments   Linked Jira Automation Task + Test Files
+```
+
+## Tech Stack
+- Python + FastAPI
+- Pydantic (schema validation)
+- Gemini (`google-genai`) for AI reasoning/generation
+- Jira Cloud REST API + Jira Automation Webhooks
+- Playwright for browser automation skeletons
+- Pytest for backend/security regression tests
+- Bitbucket Pipelines + GitHub Actions for CI
+- ngrok for local webhook testing
+
+## Why This README Includes Troubleshooting
+This project integrates Jira, webhooks, AI APIs, and browser automation, so setup mistakes are common in real teams. The troubleshooting section is intentionally detailed to make onboarding fast, reduce demo friction, and help users self-recover from known errors (`401`, `422`, ngrok tunnel issues, Playwright browser install issues).
+
 ## Start-to-Finish Quickstart (recommended)
 Use this section if you want a single guided path from setup to successful demo.
 
