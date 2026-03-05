@@ -1,10 +1,28 @@
 # QAP AI QA Engine
+AI-driven QA Automation Platform (QAP) that orchestrates the transition from Acceptance Criteria (AC) to executable test logic.
 
-AI-driven QA Automation Platform (QAP) that converts Jira tickets into:
-- Manual test scenarios
-- High-value automation candidates
-- Playwright test names
-- Security-minded QA notes
+- The engine converts Jira tickets into:
+
+- Manual test scenarios with structured coverage.
+
+- High-value automation candidates via heuristic evaluation.
+
+- Playwright test skeletons for immediate implementation.
+
+- Security-minded QA notes to identify edge-case risks.
+
+## The Logic: AC-to-Test Mapping
+The QAP Orchestrator follows a deterministic logic gate to bridge the gap between business requirements and execution:
+
+- Contextual Parsing: The engine ingests Jira Acceptance Criteria (AC) and identifies the "testable surface area," stripping away non-functional noise.
+
+- Feasibility Analysis: A specialized evaluation layer checks the AC against "Automation Suitability" markers (e.g., UI stability, data predictability, and execution ROI).
+
+- Heuristic Decision Gate: * High Value: Generates a Playwright test skeleton, creates a linked Jira Automation Task, and notifies the team.
+
+- Low Value/Brittle: Defaults to a manual-first scenario blueprint to prevent technical debt and "flaky" automation.
+
+- Governance & Security: All outputs are validated against strict schemas to ensure syntax integrity and security-conscious test steps.
 
 ## What Problem This Solves
 QA teams often spend too much time translating Jira Acceptance Criteria into test scenarios and deciding what should be automated first. This creates inconsistent coverage, missed edge cases, and slower feedback loops.
@@ -57,6 +75,8 @@ This project integrates Jira, webhooks, AI APIs, and browser automation, so setu
 
 ## Start-to-Finish Quickstart (recommended)
 Use this section if you want a single guided path from setup to successful demo.
+
+
 
 ### 1) Clone and install
 ```bash
