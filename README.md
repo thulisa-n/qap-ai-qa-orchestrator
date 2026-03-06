@@ -432,6 +432,9 @@ See `docs/architecture.md` for the service boundaries, scalability choices, and 
 ## Security report
 See `docs/security-hardening-report.md` for implemented controls, residual risks, and validation guidance.
 
+## Observability plan
+See `docs/observability.md` for logging, metrics, alerting, and async workflow visibility recommendations for production readiness.
+
 ## PoC rollout guide
 See `docs/poc-implementation-guide.md` for Bitbucket sharing steps and Jira automation rule setup for `In QA` triggers.
 
