@@ -182,10 +182,14 @@ Return JSON schema:
   "shouldCreateAutomationTask": true,
   "confidence": 0.0,
   "reason": "string",
-  "recommendedCoverage": "full_automation|partial_automation|manual_only"
+  "recommendedCoverage": "full_automation|partial_automation|manual_only",
+  "automationRisk": "low|medium|high",
+  "riskReasons": ["string"]
 }}
 
 Rules:
 - If recommendedCoverage is manual_only, shouldCreateAutomationTask must be false.
+- If recommendedCoverage is full_automation, automationRisk should usually be low or medium.
+- Return 1-3 concise riskReasons about flakiness, data volatility, or environment instability.
 - Keep reason concise and actionable (2-4 sentences max).
 """.strip()

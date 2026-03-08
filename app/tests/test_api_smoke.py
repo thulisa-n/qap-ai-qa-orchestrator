@@ -38,7 +38,9 @@ VALID_AUTOMATION_DECISION_YES_JSON = """
   "shouldCreateAutomationTask": true,
   "confidence": 0.92,
   "reason": "The flow is deterministic and high value for regression, so automation should be created now.",
-  "recommendedCoverage": "full_automation"
+  "recommendedCoverage": "full_automation",
+  "automationRisk": "low",
+  "riskReasons": ["Stable selectors", "Deterministic data and access patterns"]
 }
 """.strip()
 
@@ -47,7 +49,9 @@ VALID_AUTOMATION_DECISION_NO_JSON = """
   "shouldCreateAutomationTask": false,
   "confidence": 0.86,
   "reason": "Current criteria are exploratory and unstable, so keep this manual for now.",
-  "recommendedCoverage": "manual_only"
+  "recommendedCoverage": "manual_only",
+  "automationRisk": "high",
+  "riskReasons": ["Frequent UI/content changes", "Exploratory assertions are subjective"]
 }
 """.strip()
 

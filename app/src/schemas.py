@@ -148,12 +148,15 @@ class AutomationDecision(BaseModel):
     recommendedCoverage: str = Field(
         pattern="^(full_automation|partial_automation|manual_only)$"
     )
+    automationRisk: str = Field(pattern="^(low|medium|high)$")
+    riskReasons: list[str] = Field(default_factory=list, max_length=5)
 
 
 class FullQAFlowResponse(BaseModel):
     scenarios: dict[str, Any]
     playwright: dict[str, Any]
     automationDecision: dict[str, Any] | None = None
+    coverageReport: dict[str, Any] | None = None
     jiraComment: dict[str, Any] | None = None
     filesWritten: dict[str, Any] | None = None
     automationTask: dict[str, Any] | None = None
