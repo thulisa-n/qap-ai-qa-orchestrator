@@ -14,6 +14,9 @@ QA teams lose time manually translating Jira Acceptance Criteria into test scena
 4. QAP writes Playwright skeleton files and can create a linked automation task.
 5. QA reviews and approves implementation direction.
 
+## Demo Video
+[▶ Watch the 83-second walkthrough](docs/ai-qa-demo.mov)
+
 ## Visual Architecture
 ```text
 Jira Ticket (Acceptance Criteria)
