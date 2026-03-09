@@ -5,10 +5,13 @@ from app.src.schemas import (
     GenerateBothResponse,
     GeneratePlaywrightRequest,
     GeneratePlaywrightResponse,
+    GenerateQAReportRequest,
+    GenerateQAReportResponse,
     GenerateTestsRequest,
     GenerateTestsResponse,
 )
 from app.src.services.llm_service import (
+    build_qa_report_prompt,
     build_playwright_prompt,
     build_tests_prompt,
     call_llm,
@@ -113,6 +116,32 @@ def generate_both_endpoint(
             )
 
         return GenerateBothResponse(tests=tests_obj, playwright=pw_obj)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error.")
+
+
+@router.post(
+    "/generate-qa-report",
+    response_model=GenerateQAReportResponse,
+    operation_id="generate_qa_report",
+)
+def generate_qa_report_endpoint(
+    payload: GenerateQAReportRequest, _: None = Depends(require_api_key)
+) -> GenerateQAReportResponse:
+    try:
+        prompt = build_qa_report_prompt(payload.acceptanceCriteria, payload.context)
+        text = call_llm(prompt)
+        try:
+            return GenerateQAReportResponse.model_validate_json(text)
+        except Exception:
+            raise HTTPException(
+                status_code=502,
+                detail="QA report output did not match the expected schema.",
+            )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except HTTPException:

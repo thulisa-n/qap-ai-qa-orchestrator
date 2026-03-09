@@ -33,6 +33,63 @@ VALID_PLAYWRIGHT_JSON = """
 }
 """.strip()
 
+VALID_QA_REPORT_JSON = """
+{
+  "note": "This report summarizes QA validation progress from provided acceptance criteria.",
+  "testScenariosAndResults": [
+    {
+      "scenario": "API Request Audit",
+      "stepsTaken": ["Monitor network tab on initial render", "Verify request count"],
+      "expectedResult": "Expected baseline requests are reduced after optimization.",
+      "actualResult": "Request count reduced and redundant calls removed.",
+      "status": "Pass"
+    },
+    {
+      "scenario": "User Info Optimization",
+      "stepsTaken": ["Inspect request parameters"],
+      "expectedResult": "Lite mode is used where applicable.",
+      "actualResult": "mode=lite observed.",
+      "status": "Pass"
+    },
+    {
+      "scenario": "Caching Validation",
+      "stepsTaken": ["Trigger repeated data requests"],
+      "expectedResult": "Responses should be served from cache.",
+      "actualResult": "Cache hits confirmed.",
+      "status": "Pass"
+    },
+    {
+      "scenario": "Data Integrity Check",
+      "stepsTaken": ["Compare with baseline behavior"],
+      "expectedResult": "Optimizations do not change business correctness.",
+      "actualResult": "Functional parity maintained.",
+      "status": "Pass"
+    }
+  ],
+  "performanceBenchmarking": [
+    {
+      "page": "Dashboard",
+      "baseline": "Not provided",
+      "postOptimization": "Not provided",
+      "improvement": "Not provided"
+    }
+  ],
+  "environment": {
+    "browser": "Not provided",
+    "operatingSystem": "Not provided",
+    "buildVersion": "Not provided",
+    "testedUserAccount": "Not provided",
+    "testedUrl": "Not provided"
+  },
+  "testOutcome": "Pass",
+  "attachments": ["Video: Not provided"],
+  "recommendations": [
+    "Keep monitoring TTFB trends in CI performance dashboards.",
+    "Add threshold alerts for regressions."
+  ]
+}
+""".strip()
+
 VALID_AUTOMATION_DECISION_YES_JSON = """
 {
   "shouldCreateAutomationTask": true,
@@ -127,6 +184,29 @@ def test_jira_full_qa_flow_smoke_contract(monkeypatch):
     assert payload["jiraComment"]["issueKey"] == "QAP-10"
     assert payload["automationDecision"]["shouldCreateAutomationTask"] is True
     assert payload["automationTask"]["key"] == "QAP-123"
+
+
+def test_generate_qa_report_smoke_contract(monkeypatch):
+    client = _client_with_auth_token()
+
+    def _mock_call_llm(_prompt: str) -> str:
+        return VALID_QA_REPORT_JSON
+
+    monkeypatch.setattr("app.src.routers.generation.call_llm", _mock_call_llm)
+
+    response = client.post(
+        "/generate-qa-report",
+        headers={"X-API-Key": "smoke-token"},
+        json={
+            "acceptanceCriteria": "Dashboard performance must improve and caching should reduce repeated data fetch latency.",
+            "context": "Generate report using provided template style.",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert "testScenariosAndResults" in payload
+    assert len(payload["testScenariosAndResults"]) >= 4
+    assert payload["testOutcome"] in {"Pass", "Partial Pass", "Fail"}
 
 
 def test_jira_full_qa_flow_skips_task_when_ai_says_no(monkeypatch):

@@ -45,6 +45,11 @@ Tool       Tool       Decision     Tool
 - Pytest
 - Bitbucket Pipelines + GitHub Actions
 
+## Why Playwright-first
+This project is intentionally Playwright-first to maximize depth, stability, and execution quality on one automation platform.
+
+QAP is designed to be framework-extensible in future releases, but current implementation and quality focus are optimized for Playwright workflows end to end.
+
 ## Quickstart
 ```bash
 git clone <your-repo-url>
@@ -64,6 +69,7 @@ Open:
 - `POST /jira/full-qa-flow-async` (recommended webhook target)
 - `POST /jira/full-qa-flow`
 - `POST /generate-both`
+- `POST /generate-qa-report` (structured QA report template from AC/requirements)
 - `GET /health`
 
 ## Documentation
@@ -83,3 +89,11 @@ No. Keep Jira Rule A simple and continue calling `POST /jira/full-qa-flow-async`
 ```text
 Create a detailed PR summary from this branch: include context/problem, goals, architecture changes, endpoint changes, security updates, test/CI changes, docs updates, migration notes, risks/trade-offs, verification steps, and a clear “why this approach works” section.
 ```
+
+## Future Roadmap
+- Agentic orchestration loop (`reason -> tool -> observe -> adjust`) on top of the current controller
+- Human feedback loop from Jira comments to refine scenarios and decisions
+- Closed-loop quality from test execution results and CI signals
+- Automated bug triage with AI-generated Jira bug summaries from failures
+- Playwright quality critic pass for flaky selector and brittle assertion detection
+- Optional framework adapters (Cypress/Selenium) without changing core agent logic

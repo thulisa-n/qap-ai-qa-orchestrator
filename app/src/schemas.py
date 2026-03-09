@@ -41,6 +41,19 @@ class GenerateBothRequest(BaseModel):
     )
 
 
+class GenerateQAReportRequest(BaseModel):
+    acceptanceCriteria: str = Field(
+        validation_alias=AliasChoices(
+            "acceptanceCriteria",
+            "acceptance_criteria",
+            "requirements",
+        ),
+        min_length=10,
+        max_length=MAX_ACCEPTANCE_CRITERIA_CHARS,
+    )
+    context: str | None = Field(default=None, max_length=MAX_CONTEXT_CHARS)
+
+
 class JiraAutomationTaskRequest(BaseModel):
     parentIssueKey: str | None = None
     issueType: str = "Task"
@@ -139,6 +152,31 @@ class GeneratePlaywrightResponse(BaseModel):
 class GenerateBothResponse(BaseModel):
     tests: GenerateTestsResponse
     playwright: GeneratePlaywrightResponse
+
+
+class QAReportScenarioResult(BaseModel):
+    scenario: str
+    stepsTaken: list[str]
+    expectedResult: str
+    actualResult: str
+    status: str = Field(pattern="^(Pass|Fail|Blocked|In Progress)$")
+
+
+class QAReportBenchmark(BaseModel):
+    page: str
+    baseline: str
+    postOptimization: str
+    improvement: str
+
+
+class GenerateQAReportResponse(BaseModel):
+    note: str
+    testScenariosAndResults: list[QAReportScenarioResult]
+    performanceBenchmarking: list[QAReportBenchmark]
+    environment: dict[str, str]
+    testOutcome: str
+    attachments: list[str]
+    recommendations: list[str]
 
 
 class AutomationDecision(BaseModel):
