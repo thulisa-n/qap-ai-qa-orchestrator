@@ -97,7 +97,7 @@ Create a detailed PR summary from this branch: include context/problem, goals, a
 ## Future Roadmap
 - Agentic orchestration loop (`reason -> tool -> observe -> adjust`) on top of the current controller
 - Human feedback loop from Jira comments to refine scenarios and decisions
-- Closed-loop quality from test execution results and CI signals
+- Closed-Loop Feedback Agent: analyze failed test reports, classify flake vs environment vs regression, and suggest fixes or new regression cases
 - Automated bug triage with AI-generated Jira bug summaries from failures
 - Playwright quality critic pass for flaky selector and brittle assertion detection
 - Optional framework adapters (Cypress/Selenium) without changing core agent logic
