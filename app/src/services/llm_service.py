@@ -122,13 +122,18 @@ Output JSON schema:
 Rules:
 - Use @playwright/test.
 - Use baseURL = {base_url_hint}.
-- Prefer data-testid selectors. If unknown, use placeholders and add a note.
+- Never invent selectors, routes, API endpoints, or environment variable names.
+- If selectors/routes are unknown, generate defensive templates with clear TODO comments and `test.skip(...)` so they do not produce false confidence.
 - Keep tests stable/deterministic. Do NOT automate flaky or unclear scenarios.
 - Include at least 1 security-minded test when relevant (auth, session, input validation, PII, access control).
 - Do NOT invent credentials. Use env vars: TEST_USER and TEST_PASS.
 - If API validation is needed, use request fixtures (APIRequestContext) where appropriate.
 - Create 1-3 spec files max, grouped logically.
 - Keep code clean and ready to run.
+- If baseURL points to `the-internet.herokuapp.com`, only use known stable paths/selectors:
+  - Paths: `/login`, `/secure`
+  - Selectors: `#username`, `#password`, `button[type="submit"]`, `#flash`
+  - Do not generate tests for unavailable enterprise routes like `/admin/billing`.
 
 Untrusted Acceptance Criteria:
 <acceptance_criteria>

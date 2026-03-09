@@ -177,6 +177,7 @@ class GenerateQAReportResponse(BaseModel):
     testOutcome: str
     attachments: list[str]
     recommendations: list[str]
+    tableView: str | None = None
 
 
 class AutomationDecision(BaseModel):

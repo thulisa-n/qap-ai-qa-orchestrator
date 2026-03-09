@@ -207,6 +207,8 @@ def test_generate_qa_report_smoke_contract(monkeypatch):
     assert "testScenariosAndResults" in payload
     assert len(payload["testScenariosAndResults"]) >= 4
     assert payload["testOutcome"] in {"Pass", "Partial Pass", "Fail"}
+    assert "tableView" in payload
+    assert "||Scenario||Steps Taken||Expected Result||Actual Result||Status||" in payload["tableView"]
 
 
 def test_jira_full_qa_flow_skips_task_when_ai_says_no(monkeypatch):

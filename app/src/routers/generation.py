@@ -22,6 +22,48 @@ from app.src.security import require_api_key
 router = APIRouter()
 
 
+def _build_qa_report_table_view(report: GenerateQAReportResponse) -> str:
+    lines: list[str] = []
+    lines.append("h3. QAP QA Report")
+    lines.append(report.note)
+    lines.append("")
+    lines.append("h4. Test Scenarios and Results")
+    lines.append("||Scenario||Steps Taken||Expected Result||Actual Result||Status||")
+    for row in report.testScenariosAndResults:
+        steps = "<br/>".join(row.stepsTaken)
+        lines.append(
+            f"|{row.scenario}|{steps}|{row.expectedResult}|{row.actualResult}|{row.status}|"
+        )
+
+    lines.append("")
+    lines.append("h4. Performance Benchmarking")
+    lines.append("||Page||Baseline||Post-Optimization||Improvement||")
+    for row in report.performanceBenchmarking:
+        lines.append(
+            f"|{row.page}|{row.baseline}|{row.postOptimization}|{row.improvement}|"
+        )
+
+    lines.append("")
+    lines.append("h4. Environment")
+    for key, value in report.environment.items():
+        lines.append(f"*{key}:* {value}")
+
+    lines.append("")
+    lines.append(f"h4. Test Outcome: {report.testOutcome}")
+
+    if report.attachments:
+        lines.append("")
+        lines.append("h4. Attachments")
+        lines.extend([f"- {item}" for item in report.attachments])
+
+    if report.recommendations:
+        lines.append("")
+        lines.append("h4. Recommendations")
+        lines.extend([f"- {item}" for item in report.recommendations])
+
+    return "\n".join(lines)
+
+
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -136,7 +178,10 @@ def generate_qa_report_endpoint(
         prompt = build_qa_report_prompt(payload.acceptanceCriteria, payload.context)
         text = call_llm(prompt)
         try:
-            return GenerateQAReportResponse.model_validate_json(text)
+            report = GenerateQAReportResponse.model_validate_json(text)
+            return report.model_copy(
+                update={"tableView": _build_qa_report_table_view(report)}
+            )
         except Exception:
             raise HTTPException(
                 status_code=502,

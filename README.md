@@ -81,6 +81,10 @@ Open:
 - PoC rollout: `docs/poc-implementation-guide.md`
 - Contribution guide: `CONTRIBUTING.md`
 
+## Playwright test scopes
+- Demo-verified runnable suite: `playwright-tests/tests/auth.spec.js` (works against `the-internet.herokuapp.com`)
+- Generated app-specific templates: `playwright-tests/tests/generated/*.template.js` (intended for refinement in your product environment)
+
 ## FAQ
 ### Do I need to change Jira rules for coverage analysis?
 No. Keep Jira Rule A simple and continue calling `POST /jira/full-qa-flow-async`. Coverage analysis runs inside the backend QA Agent flow, not in Jira rule logic.
