@@ -53,17 +53,42 @@ STOPWORDS = {
 
 
 def _extract_acceptance_criteria_items(raw_text: str) -> list[str]:
+    lines = (raw_text or "").splitlines()
+    section_heading_pattern = re.compile(
+        r"^(h[1-6]\.|#{1,6}\s|summary\b|description\b|optional context\b|expected qap output\b|notes\b)",
+        re.IGNORECASE,
+    )
+
+    # Prefer extracting explicit AC section content when present.
+    start_index = None
+    for idx, line in enumerate(lines):
+        if "acceptance criteria" in line.strip().lower():
+            start_index = idx + 1
+            break
+
+    candidate_lines: list[str] = []
+    if start_index is not None:
+        for line in lines[start_index:]:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if section_heading_pattern.match(stripped):
+                break
+            candidate_lines.append(stripped)
+    else:
+        candidate_lines = [line.strip() for line in lines if line.strip()]
+
     items: list[str] = []
-    for line in (raw_text or "").splitlines():
-        cleaned = line.strip()
-        if not cleaned:
-            continue
-        if cleaned.lower().startswith("acceptance criteria"):
-            continue
-        cleaned = re.sub(r"^[\-\*\u2022]\s+", "", cleaned)
+    for line in candidate_lines:
+        cleaned = re.sub(r"^[\-\*\u2022]\s+", "", line)
         cleaned = re.sub(r"^\d+[\.\)]\s+", "", cleaned)
+        cleaned = cleaned.replace("{{", "").replace("}}", "").replace("`", "")
+        # Ignore obvious non-AC instruction lines.
+        if section_heading_pattern.match(cleaned):
+            continue
         if len(cleaned) >= 8:
             items.append(cleaned)
+
     if items:
         return items
     fallback = (raw_text or "").strip()
@@ -125,10 +150,11 @@ def _format_coverage_report_for_jira(coverage_report: dict) -> str:
         "h3. QAP Coverage Report",
         "",
         "h4. Acceptance Criteria Coverage",
+        "||Acceptance Criterion||Status||",
     ]
     for row in coverage_report.get("items", []):
-        status_label = "[COVERED]" if row["status"] == "covered" else "[MISSING]"
-        lines.append(f"* {status_label} {row['acceptanceCriteria']}")
+        status_label = "Covered" if row["status"] == "covered" else "Missing"
+        lines.append(f"|{row['acceptanceCriteria']}|{status_label}|")
     lines.extend(
         [
             "",

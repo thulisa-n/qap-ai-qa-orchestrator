@@ -300,3 +300,28 @@ def test_create_issue_falls_back_from_subtask_to_task(monkeypatch):
     assert created["key"] == "QAP-456"
     assert used_issue_type == "Task"
     assert warning is not None
+
+
+def test_extract_acceptance_criteria_ignores_non_ac_sections():
+    from app.src.routers.jira import _extract_acceptance_criteria_items
+
+    payload = """
+h3. Description
+We need QA coverage for role-based access behavior on the Billing area.
+
+h3. Acceptance Criteria
+- Admin users can access /admin/billing.
+- Standard users receive 403 when navigating to /admin/billing.
+- Unauthenticated users are redirected to /login.
+
+h3. Optional Context
+Environment is stable.
+
+h3. Expected QAP output
+- New test scenarios comment
+""".strip()
+
+    items = _extract_acceptance_criteria_items(payload)
+    assert len(items) == 3
+    assert items[0].startswith("Admin users")
+    assert items[-1].startswith("Unauthenticated users")
