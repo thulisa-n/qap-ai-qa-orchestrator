@@ -8,6 +8,9 @@ on:
       - feature/**
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   backend-smoke:
     name: Backend Smoke Checks
@@ -30,38 +33,11 @@ jobs:
       - name: Import FastAPI app
         run: python -c "from app.src.app import app; print('FastAPI app import OK:', bool(app))"
 
-      - name: Run security regression tests
-        shell: bash
-        run: |
-          set -o pipefail
-          PYTHONPATH=. python -m pytest app/tests/test_security.py -q 2>&1 | tee security-test.log
-
       - name: Run backend tests
         shell: bash
         run: |
           set -o pipefail
           PYTHONPATH=. python -m pytest app/tests -q 2>&1 | tee backend-test.log
-
-      - name: Install security scanners
-        run: pip install bandit pip-audit
-
-      - name: Run Bandit (blocking on main)
-        if: ${{ github.ref == 'refs/heads/main' }}
-        run: bandit -q -r app/src
-
-      - name: Run pip-audit (blocking on main)
-        if: ${{ github.ref == 'refs/heads/main' }}
-        run: pip-audit -r app/requirements.txt
-
-      - name: Run Bandit (non-blocking on non-main)
-        if: ${{ github.ref != 'refs/heads/main' }}
-        continue-on-error: true
-        run: bandit -q -r app/src
-
-      - name: Run pip-audit (non-blocking on non-main)
-        if: ${{ github.ref != 'refs/heads/main' }}
-        continue-on-error: true
-        run: pip-audit -r app/requirements.txt
 
       - name: Upload backend execution traces
         if: ${{ always() }}
@@ -69,14 +45,88 @@ jobs:
         with:
           name: backend-traces-${{ github.run_id }}
           path: |
-            security-test.log
             backend-test.log
           retention-days: 14
+
+  security-scans:
+    name: Security Scans and Reports
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install security dependencies
+        run: pip install -r app/requirements.txt bandit pip-audit
+
+      - name: Run security regression tests
+        shell: bash
+        run: |
+          set -o pipefail
+          PYTHONPATH=. python -m pytest app/tests/test_security.py -q 2>&1 | tee security-test.log
+
+      - name: Run Bandit and pip-audit
+        id: security_scan
+        shell: bash
+        run: |
+          set +e
+          bandit -q -r app/src -f sarif -o bandit.sarif
+          BANDIT_EXIT=$?
+          pip-audit -r app/requirements.txt -f json -o pip-audit.json
+          PIP_AUDIT_EXIT=$?
+          set -e
+
+          echo "bandit_exit=$BANDIT_EXIT" >> "$GITHUB_OUTPUT"
+          echo "pip_audit_exit=$PIP_AUDIT_EXIT" >> "$GITHUB_OUTPUT"
+
+          if [ "${GITHUB_REF}" = "refs/heads/main" ] && { [ "$BANDIT_EXIT" -ne 0 ] || [ "$PIP_AUDIT_EXIT" -ne 0 ]; }; then
+            echo "Blocking security findings on main branch."
+            exit 1
+          fi
+
+      - name: Upload Bandit SARIF to Security tab
+        if: ${{ always() && hashFiles('bandit.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: bandit.sarif
+
+      - name: Upload security reports artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports-${{ github.run_id }}
+          path: |
+            security-test.log
+            bandit.sarif
+            pip-audit.json
+          retention-days: 14
+
+      - name: Publish security summary
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          {
+            echo "## Security Scan Summary"
+            echo ""
+            echo "- Branch: ${GITHUB_REF_NAME}"
+            echo "- Bandit exit code: ${{ steps.security_scan.outputs.bandit_exit }}"
+            echo "- pip-audit exit code: ${{ steps.security_scan.outputs.pip_audit_exit }}"
+            echo "- SARIF uploaded to GitHub Security tab."
+            echo "- Full reports uploaded as workflow artifacts."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   playwright:
     name: Run Playwright Tests
     runs-on: ubuntu-latest
-    needs: backend-smoke
+    needs: [backend-smoke, security-scans]
     env:
       QAP_API_BASE_URL: ${{ secrets.QAP_API_BASE_URL }}
       QAP_API_AUTH_TOKEN: ${{ secrets.QAP_API_AUTH_TOKEN }}
