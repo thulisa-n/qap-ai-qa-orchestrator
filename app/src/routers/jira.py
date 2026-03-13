@@ -1,8 +1,10 @@
 import re
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
+from app.src.agents.critic_agent import run_artifact_critic
 from app.src.agents.remediation_agent import plan_remediation
 from app.src.agents.validator_agent import validate_agent_outputs
 from app.src.governance.engine import evaluate_governance_gate
@@ -27,6 +29,7 @@ from app.src.services.job_service import (
     mark_job_failed,
     mark_job_running,
     mark_job_succeeded,
+    update_job_result,
 )
 from app.src.services.jira_service import (
     format_tests_for_jira,
@@ -36,7 +39,6 @@ from app.src.services.jira_service import (
     jira_link_issues,
 )
 from app.src.services.llm_service import (
-    build_artifact_critic_prompt,
     build_automation_decision_prompt,
     build_playwright_prompt,
     build_tests_prompt,
@@ -296,37 +298,35 @@ def _create_issue_with_fallback(
         raise
 
 
-def _run_full_qa_flow(payload: FullQAFlowRequest) -> dict:
-    tests_prompt = build_tests_prompt(payload.acceptanceCriteria, payload.context)
+def _run_generation_and_gates(
+    payload: FullQAFlowRequest,
+    *,
+    context_override: str | None = None,
+) -> dict[str, Any]:
+    effective_context = context_override if context_override is not None else payload.context
+
+    tests_prompt = build_tests_prompt(payload.acceptanceCriteria, effective_context)
     tests_text = call_llm(tests_prompt)
     tests = GenerateTestsResponse.model_validate_json(tests_text)
     coverage_report = _analyze_coverage(payload.acceptanceCriteria, tests)
 
-    jira_comment = None
-    if payload.commentOnJira:
-        comment = format_tests_for_jira(tests)
-        jira_add_comment(payload.issueKey, comment)
-        jira_add_comment(payload.issueKey, _format_coverage_report_for_jira(coverage_report))
-        jira_comment = {"issueKey": payload.issueKey, "status": "comment_added"}
-
     pw_prompt = build_playwright_prompt(
-        payload.acceptanceCriteria, payload.context, payload.baseUrl
+        payload.acceptanceCriteria, effective_context, payload.baseUrl
     )
     pw_text = call_llm(pw_prompt)
     playwright = GeneratePlaywrightResponse.model_validate_json(pw_text)
 
-    critic_prompt = build_artifact_critic_prompt(
-        payload.acceptanceCriteria,
-        payload.context,
-        tests.model_dump_json(),
-        playwright.model_dump_json(),
+    critic_decision = run_artifact_critic(
+        acceptance_criteria=payload.acceptanceCriteria,
+        context=effective_context,
+        tests_json=tests.model_dump_json(),
+        playwright_json=playwright.model_dump_json(),
+        llm_caller=call_llm,
     )
-    critic_text = call_llm(critic_prompt)
-    critic_decision = ArtifactCriticDecision.model_validate_json(critic_text)
 
     decision_prompt = build_automation_decision_prompt(
         payload.acceptanceCriteria,
-        payload.context,
+        effective_context,
         tests.model_dump_json(),
     )
     decision_text = call_llm(decision_prompt)
@@ -344,6 +344,57 @@ def _run_full_qa_flow(payload: FullQAFlowRequest) -> dict:
         automation_decision=automation_decision,
         critic_decision=critic_decision,
     )
+
+    return {
+        "tests": tests,
+        "coverage_report": coverage_report,
+        "playwright": playwright,
+        "critic_decision": critic_decision,
+        "automation_decision": automation_decision,
+        "validator_decision": validator_decision,
+        "remediation_decision": remediation_decision,
+        "governance_decision": governance_decision,
+    }
+
+
+def _run_full_qa_flow(payload: FullQAFlowRequest) -> dict:
+    pass_one = _run_generation_and_gates(payload)
+    tests = pass_one["tests"]
+    coverage_report = pass_one["coverage_report"]
+    playwright = pass_one["playwright"]
+    critic_decision = pass_one["critic_decision"]
+    automation_decision = pass_one["automation_decision"]
+    validator_decision = pass_one["validator_decision"]
+    remediation_decision = pass_one["remediation_decision"]
+    governance_decision = pass_one["governance_decision"]
+
+    retry_count = 0
+    retry_reason: str | None = None
+    if not validator_decision.isValid and remediation_decision.action == "heal":
+        retry_count = 1
+        retry_reason = "validator_needs_fix"
+        heal_context = (payload.context or "") + (
+            "\n\n[HEAL_RETRY]\n"
+            "Regenerate artifacts and resolve validator findings with stricter fidelity to AC.\n"
+            f"Findings: {'; '.join(validator_decision.findings)}\n"
+            f"Suggested fixes: {'; '.join(validator_decision.suggestedFixes)}"
+        )
+        pass_two = _run_generation_and_gates(payload, context_override=heal_context)
+        tests = pass_two["tests"]
+        coverage_report = pass_two["coverage_report"]
+        playwright = pass_two["playwright"]
+        critic_decision = pass_two["critic_decision"]
+        automation_decision = pass_two["automation_decision"]
+        validator_decision = pass_two["validator_decision"]
+        remediation_decision = pass_two["remediation_decision"]
+        governance_decision = pass_two["governance_decision"]
+
+    jira_comment = None
+    if payload.commentOnJira:
+        comment = format_tests_for_jira(tests)
+        jira_add_comment(payload.issueKey, comment)
+        jira_add_comment(payload.issueKey, _format_coverage_report_for_jira(coverage_report))
+        jira_comment = {"issueKey": payload.issueKey, "status": "comment_added"}
     if payload.commentOnJira:
         decision_comment_lines = [
             "h3. AI QA Agent Decision",
@@ -448,6 +499,9 @@ def _run_full_qa_flow(payload: FullQAFlowRequest) -> dict:
                 "jira_reporting",
             ],
             "taskCreated": bool(task_created),
+            "retryAttempted": retry_count > 0,
+            "retryCount": retry_count,
+            "retryReason": retry_reason,
         },
         "automationDecision": automation_decision.model_dump(),
         "criticDecision": critic_decision.model_dump(),
@@ -606,9 +660,10 @@ def jira_full_qa_flow_async(
 ) -> dict:
     try:
         job_id = str(uuid4())
-        create_job(job_id=job_id, issue_key=payload.issueKey)
+        payload_dict = payload.model_dump()
+        create_job(job_id=job_id, issue_key=payload.issueKey, request_payload=payload_dict)
         background_tasks.add_task(
-            _run_full_qa_flow_background, payload.model_dump(), job_id
+            _run_full_qa_flow_background, payload_dict, job_id
         )
         return {
             "status": "accepted",
@@ -644,6 +699,137 @@ def get_async_job_trace(
     if not trace:
         raise HTTPException(status_code=404, detail="Job not found.")
     return trace
+
+
+@router.post("/jobs/{job_id}/retry", operation_id="retry_async_job")
+def retry_async_job(
+    job_id: str,
+    background_tasks: BackgroundTasks,
+    _: None = Depends(require_api_key),
+) -> dict:
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    request_payload = job.get("requestPayload")
+    if not request_payload:
+        raise HTTPException(
+            status_code=400,
+            detail="Job retry is unavailable because original request payload was not persisted.",
+        )
+
+    payload = FullQAFlowRequest.model_validate(request_payload)
+    new_job_id = str(uuid4())
+    create_job(
+        job_id=new_job_id,
+        issue_key=payload.issueKey,
+        request_payload=request_payload,
+    )
+    background_tasks.add_task(_run_full_qa_flow_background, request_payload, new_job_id)
+
+    try:
+        jira_add_comment(
+            payload.issueKey,
+            (
+                "h3. QAP Retry Requested\n"
+                f"*Source job:* {job_id}\n"
+                f"*New job:* {new_job_id}\n"
+                "Reason: Regenerate with validator/critic fixes."
+            ),
+        )
+    except Exception as exc:
+        print(f"[jobs/retry] Jira comment skipped for {payload.issueKey}: {exc}")
+
+    return {
+        "status": "accepted",
+        "mode": "retry",
+        "sourceJobId": job_id,
+        "jobId": new_job_id,
+        "jobStatusPath": f"/jobs/{new_job_id}",
+        "issueKey": payload.issueKey,
+    }
+
+
+@router.post("/jobs/{job_id}/proceed-anyway", operation_id="proceed_anyway_async_job")
+def proceed_anyway_async_job(
+    job_id: str,
+    _: None = Depends(require_api_key),
+) -> dict:
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    result = job.get("result")
+    if not result:
+        raise HTTPException(status_code=400, detail="Job does not have a result payload yet.")
+
+    issue_key = job["issueKey"]
+    if result.get("automationTask"):
+        return {
+            "status": "already_created",
+            "jobId": job_id,
+            "issueKey": issue_key,
+            "automationTask": result.get("automationTask"),
+        }
+
+    automation_decision = result.get("automationDecision") or {}
+    playwright = result.get("playwright") or {}
+    files = playwright.get("files") or []
+    summary = f"{issue_key} | Automation: Manual override implementation task"
+    description = (
+        "Manual Override Decision\n"
+        "-----------------------\n"
+        "QA requested proceed-anyway despite validator/governance block.\n"
+        f"Coverage recommendation: {automation_decision.get('recommendedCoverage', 'unknown')}\n"
+        f"Confidence: {automation_decision.get('confidence', 'unknown')}\n"
+        f"Automation risk: {automation_decision.get('automationRisk', 'unknown')}\n\n"
+        "Generated Playwright files:\n"
+        + ("\n".join(f"- {item.get('path', 'unknown')}" for item in files) if files else "- None")
+    )
+
+    created, used_issue_type, issue_type_warning = _create_issue_with_fallback(
+        summary=summary,
+        description=description,
+        issue_type="Task",
+        parent_key=issue_key,
+    )
+
+    created_key = created.get("key")
+    if created_key and used_issue_type.lower() not in {"sub-task", "subtask"}:
+        jira_link_issues(
+            inward_issue_key=issue_key,
+            outward_issue_key=created_key,
+            link_type_name="Relates",
+        )
+
+    if issue_type_warning:
+        jira_add_comment(
+            issue_key,
+            "h3. Automation Task Fallback\n"
+            "Proceed-anyway attempted with fallback issue type.\n\n"
+            f"Details: {issue_type_warning}",
+        )
+
+    jira_add_comment(
+        issue_key,
+        (
+            "h3. QAP Manual Override\n"
+            f"Proceed-anyway approved for job `{job_id}`.\n"
+            f"Created automation task: `{created.get('key', 'unknown')}`."
+        ),
+    )
+
+    result["automationTask"] = created
+    result["manualOverride"] = {"proceedAnyway": True, "sourceJobId": job_id}
+    update_job_result(job_id, result)
+
+    return {
+        "status": "created",
+        "mode": "proceed_anyway",
+        "jobId": job_id,
+        "issueKey": issue_key,
+        "automationTask": created,
+    }
 
 
 @router.get("/jobs", operation_id="list_async_jobs")

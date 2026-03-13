@@ -548,6 +548,10 @@ def test_jira_full_qa_flow_blocks_task_when_validator_fails(monkeypatch):
             VALID_PLAYWRIGHT_JSON,
             VALID_ARTIFACT_CRITIC_NEEDS_FIX_JSON,
             VALID_AUTOMATION_DECISION_YES_JSON,
+            VALID_TESTS_JSON,
+            VALID_PLAYWRIGHT_JSON,
+            VALID_ARTIFACT_CRITIC_NEEDS_FIX_JSON,
+            VALID_AUTOMATION_DECISION_YES_JSON,
         ]
     )
 
@@ -641,6 +645,87 @@ def test_get_async_job_trace_returns_404_for_unknown_job():
         headers={"X-API-Key": "smoke-token"},
     )
     assert response.status_code == 404
+
+
+def test_retry_async_job_creates_new_job(monkeypatch):
+    client = _client_with_auth_token()
+    monkeypatch.setattr(
+        "app.src.routers.jira._run_full_qa_flow_background",
+        lambda _payload_data, _job_id: None,
+    )
+
+    create_response = client.post(
+        "/jira/full-qa-flow-async",
+        headers={"X-API-Key": "smoke-token"},
+        json={
+            "issueKey": "QAP-88",
+            "acceptanceCriteria": "Given role checks, when API is called, then authorization is enforced.",
+            "commentOnJira": False,
+            "writePlaywrightFiles": False,
+            "createAutomationTask": False,
+        },
+    )
+    assert create_response.status_code == 200
+    source_job_id = create_response.json()["jobId"]
+
+    retry_response = client.post(
+        f"/jobs/{source_job_id}/retry",
+        headers={"X-API-Key": "smoke-token"},
+    )
+    assert retry_response.status_code == 200
+    retry_payload = retry_response.json()
+    assert retry_payload["mode"] == "retry"
+    assert retry_payload["sourceJobId"] == source_job_id
+    assert retry_payload["jobId"] != source_job_id
+
+
+def test_proceed_anyway_creates_manual_override_task(monkeypatch):
+    from app.src.services.job_service import create_job, mark_job_succeeded
+
+    client = _client_with_auth_token()
+    create_job(
+        job_id="job-override-1",
+        issue_key="QAP-89",
+        request_payload={
+            "issueKey": "QAP-89",
+            "acceptanceCriteria": "Given blocked automation, when override is approved, then task may still be created.",
+        },
+    )
+    mark_job_succeeded(
+        "job-override-1",
+        {
+            "automationDecision": {
+                "recommendedCoverage": "full_automation",
+                "confidence": 0.91,
+                "automationRisk": "medium",
+            },
+            "playwright": {"files": [{"path": "tests/auth.spec.js"}]},
+            "validatorDecision": {"isValid": False, "verdict": "needs_fix"},
+            "governanceDecision": {"allowedForAutomation": False},
+        },
+    )
+
+    monkeypatch.setattr(
+        "app.src.routers.jira._create_issue_with_fallback",
+        lambda **_kwargs: ({"key": "QAP-900", "summary": "override task"}, "Task", None),
+    )
+    monkeypatch.setattr(
+        "app.src.routers.jira.jira_link_issues",
+        lambda **_kwargs: {"status": "linked"},
+    )
+    monkeypatch.setattr(
+        "app.src.routers.jira.jira_add_comment",
+        lambda *_args, **_kwargs: {"ok": True},
+    )
+
+    response = client.post(
+        "/jobs/job-override-1/proceed-anyway",
+        headers={"X-API-Key": "smoke-token"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "proceed_anyway"
+    assert payload["automationTask"]["key"] == "QAP-900"
 
 
 def test_list_async_jobs_supports_filters(monkeypatch):

@@ -13,6 +13,7 @@ AI-driven QA Agent Controller that turns Jira Acceptance Criteria into structure
 - [Core Endpoints](#core-endpoints)
 - [Documentation Index](docs/index.md)
 - [Go-live Checklist](docs/go-live-checklist.md)
+- [Implementation Checklist](docs/implementation-checklist.md)
 - [Demo Video](docs/ai-qa-demo.mov)
 
 ## What Problem This Solves
@@ -77,11 +78,17 @@ QAP follows a practical agentic loop with explicit control gates:
 
 This keeps AI behavior powerful but bounded: automation is never “blindly accepted,” and human QA remains the final authority.
 
-## Verification & Remediation Agents
-- **Validator Agent:** deterministic checks on agent outputs (minimum scenarios/files, critic verdict consistency, automation decision consistency).
-- **Remediation Agent:** decides `none|heal|escalate` when validator fails.
-- Full QA flow now returns both `validatorDecision` and `remediationDecision`.
-- Automation task creation is blocked when validator gate fails, even if AI recommends automation.
+## Verification & Remediation Architecture
+QAP implements a "Trust but Verify" pattern with three safety layers:
+
+1. **Critic Agent** -> Scores generated scenario/playwright quality.
+2. **Validator Agent** -> Enforces deterministic business rules and consistency gates.
+3. **Remediation Agent** -> Self-heals or escalates when checks fail.
+
+[View Execution Trace Example ->](docs/execution-trace-example.md)
+
+- Full QA flow returns `criticDecision`, `validatorDecision`, and `remediationDecision`.
+- Automation task creation is blocked when the validator or governance gate does not pass.
 
 ## Tech Stack
 - Python + FastAPI
@@ -158,6 +165,7 @@ Notes:
 
 ## Documentation
 - Docs index: `docs/index.md`
+- Implementation checklist: `docs/implementation-checklist.md`
 - Architecture: `docs/architecture.md`
 - Jira automation rules and payload schemas: `docs/jira-automation-rules.md`
 - Runbook and troubleshooting: `docs/runbook-troubleshooting.md`
@@ -166,6 +174,7 @@ Notes:
 - Go-live checklist: `docs/go-live-checklist.md`
 - PKI hybrid mode: `docs/pki-hybrid-mode.md`
 - Security: `docs/security-hardening-report.md`
+- Governance + certification alignment: `docs/governance-certification-alignment.md`
 - Observability: `docs/observability.md`
 - PoC rollout: `docs/poc-implementation-guide.md`
 - Contribution guide: `CONTRIBUTING.md`

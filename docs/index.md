@@ -7,6 +7,7 @@ Use this page as the entry point for operating, extending, and presenting QAP.
 - `README.md` - project overview, architecture, and quickstart.
 - `docs/go-live-checklist.md` - fastest path to run and demonstrate full flow.
 - `docs/jira-automation-rules.md` - Rule A/B/C setup and deterministic payloads.
+- `docs/implementation-checklist.md` - weekly execution plan for self-healing roadmap.
 
 ## Operations and troubleshooting
 
@@ -24,6 +25,7 @@ Use this page as the entry point for operating, extending, and presenting QAP.
 ## Security and governance
 
 - `docs/security-hardening-report.md` - controls, tests, CI scan policy, and residual risk.
+- `docs/governance-certification-alignment.md` - strict governance rules and certification mapping.
 
 ## Suggested read sequence (for hiring managers)
 

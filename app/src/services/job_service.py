@@ -33,10 +33,14 @@ def _ensure_db() -> Path:
                 started_at TEXT,
                 completed_at TEXT,
                 result_json TEXT,
+                request_json TEXT,
                 error TEXT
             )
             """
         )
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+        if "request_json" not in columns:
+            conn.execute("ALTER TABLE jobs ADD COLUMN request_json TEXT")
         conn.commit()
     return path
 
@@ -50,6 +54,7 @@ def _row_to_job(row: tuple[Any, ...]) -> dict[str, Any]:
         started_at,
         completed_at,
         result_json,
+        request_json,
         error,
     ) = row
     return {
@@ -60,11 +65,17 @@ def _row_to_job(row: tuple[Any, ...]) -> dict[str, Any]:
         "startedAt": started_at,
         "completedAt": completed_at,
         "result": json.loads(result_json) if result_json else None,
+        "requestPayload": json.loads(request_json) if request_json else None,
         "error": error,
     }
 
 
-def create_job(*, job_id: str, issue_key: str) -> dict[str, Any]:
+def create_job(
+    *,
+    job_id: str,
+    issue_key: str,
+    request_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     job = {
         "jobId": job_id,
         "issueKey": issue_key,
@@ -73,6 +84,7 @@ def create_job(*, job_id: str, issue_key: str) -> dict[str, Any]:
         "startedAt": None,
         "completedAt": None,
         "result": None,
+        "requestPayload": request_payload,
         "error": None,
     }
     db_path = _ensure_db()
@@ -81,8 +93,8 @@ def create_job(*, job_id: str, issue_key: str) -> dict[str, Any]:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO jobs (
-                    job_id, issue_key, status, created_at, started_at, completed_at, result_json, error
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    job_id, issue_key, status, created_at, started_at, completed_at, result_json, request_json, error
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job["jobId"],
@@ -92,6 +104,7 @@ def create_job(*, job_id: str, issue_key: str) -> dict[str, Any]:
                     job["startedAt"],
                     job["completedAt"],
                     None,
+                    json.dumps(request_payload) if request_payload else None,
                     None,
                 ),
             )
@@ -150,7 +163,7 @@ def get_job(job_id: str) -> dict[str, Any] | None:
         with sqlite3.connect(db_path) as conn:
             row = conn.execute(
                 """
-                SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, error
+                SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, request_json, error
                 FROM jobs
                 WHERE job_id = ?
                 """,
@@ -178,6 +191,21 @@ def get_job_trace(job_id: str) -> dict[str, Any] | None:
     }
 
 
+def update_job_result(job_id: str, result: dict[str, Any]) -> None:
+    db_path = _ensure_db()
+    with _LOCK:
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                """
+                UPDATE jobs
+                SET result_json = ?
+                WHERE job_id = ?
+                """,
+                (json.dumps(result), job_id),
+            )
+            conn.commit()
+
+
 def list_jobs(
     *,
     limit: int = 20,
@@ -188,7 +216,7 @@ def list_jobs(
     params: tuple[Any, ...]
     if status and issue_key:
         sql = """
-            SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, error
+            SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, request_json, error
             FROM jobs
             WHERE status = ? AND issue_key = ?
             ORDER BY created_at DESC
@@ -197,7 +225,7 @@ def list_jobs(
         params = (status, issue_key, limit)
     elif status:
         sql = """
-            SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, error
+            SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, request_json, error
             FROM jobs
             WHERE status = ?
             ORDER BY created_at DESC
@@ -206,7 +234,7 @@ def list_jobs(
         params = (status, limit)
     elif issue_key:
         sql = """
-            SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, error
+            SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, request_json, error
             FROM jobs
             WHERE issue_key = ?
             ORDER BY created_at DESC
@@ -215,7 +243,7 @@ def list_jobs(
         params = (issue_key, limit)
     else:
         sql = """
-            SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, error
+            SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, request_json, error
             FROM jobs
             ORDER BY created_at DESC
             LIMIT ?
