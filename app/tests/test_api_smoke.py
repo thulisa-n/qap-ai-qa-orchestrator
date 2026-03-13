@@ -90,6 +90,39 @@ VALID_QA_REPORT_JSON = """
 }
 """.strip()
 
+VALID_FEEDBACK_ANALYSIS_JSON = """
+{
+  "summary": "Most failures appear to be environment-related with one likely regression candidate.",
+  "dominantClassification": "environment",
+  "confidence": 0.82,
+  "findings": [
+    {
+      "testName": "Authentication Tests › should allow login",
+      "classification": "environment",
+      "confidence": 0.86,
+      "evidence": ["net::ERR_CONNECTION_REFUSED", "Base URL unreachable during run"],
+      "suggestedAction": "Verify target environment availability and retry before opening a bug."
+    },
+    {
+      "testName": "Billing API contract check",
+      "classification": "regression",
+      "confidence": 0.74,
+      "evidence": ["Expected 200 but got 500", "Schema mismatch on required field"],
+      "suggestedAction": "Open regression defect and add contract regression coverage for required fields."
+    }
+  ],
+  "recommendations": [
+    "Add a preflight health check in CI before running browser tests.",
+    "Tag unstable selectors and monitor retry trend by spec."
+  ],
+  "suggestedRegressionTests": [
+    "Add API contract test for billing widget required fields.",
+    "Add smoke check to assert environment health endpoint returns 200 before E2E."
+  ],
+  "suggestedJiraTaskSummary": "Closed-loop follow-up: harden environment preflight and billing API contract regression coverage"
+}
+""".strip()
+
 VALID_AUTOMATION_DECISION_YES_JSON = """
 {
   "shouldCreateAutomationTask": true,
@@ -109,6 +142,30 @@ VALID_AUTOMATION_DECISION_NO_JSON = """
   "recommendedCoverage": "manual_only",
   "automationRisk": "high",
   "riskReasons": ["Frequent UI/content changes", "Exploratory assertions are subjective"]
+}
+""".strip()
+
+VALID_ARTIFACT_CRITIC_JSON = """
+{
+  "overallScore": 0.88,
+  "scenarioQualityScore": 0.9,
+  "playwrightQualityScore": 0.85,
+  "isAcceptable": true,
+  "findings": ["Minor selector hardening needed for one path."],
+  "recommendations": ["Prefer role/label selectors where possible."],
+  "verdict": "pass"
+}
+""".strip()
+
+VALID_ARTIFACT_CRITIC_NEEDS_FIX_JSON = """
+{
+  "overallScore": 0.42,
+  "scenarioQualityScore": 0.4,
+  "playwrightQualityScore": 0.45,
+  "isAcceptable": false,
+  "findings": ["Critical assertions missing for security behavior."],
+  "recommendations": ["Regenerate tests with stronger deterministic assertions."],
+  "verdict": "needs_revision"
 }
 """.strip()
 
@@ -146,7 +203,12 @@ def test_jira_full_qa_flow_smoke_contract(monkeypatch):
     client = _client_with_auth_token()
 
     responses = iter(
-        [VALID_TESTS_JSON, VALID_PLAYWRIGHT_JSON, VALID_AUTOMATION_DECISION_YES_JSON]
+        [
+            VALID_TESTS_JSON,
+            VALID_PLAYWRIGHT_JSON,
+            VALID_ARTIFACT_CRITIC_JSON,
+            VALID_AUTOMATION_DECISION_YES_JSON,
+        ]
     )
 
     def _mock_call_llm(_prompt: str) -> str:
@@ -172,7 +234,7 @@ def test_jira_full_qa_flow_smoke_contract(monkeypatch):
         headers={"X-API-Key": "smoke-token"},
         json={
             "issueKey": "QAP-10",
-            "acceptanceCriteria": "Given valid credentials, when user signs in, then dashboard is shown with role access.",
+            "acceptanceCriteria": "Given role guard rules, when protected endpoint access is attempted, then session expiry and role-based access must be enforced.",
             "commentOnJira": True,
             "writePlaywrightFiles": True,
             "createAutomationTask": True,
@@ -183,6 +245,9 @@ def test_jira_full_qa_flow_smoke_contract(monkeypatch):
     assert payload["status"] == "ok"
     assert payload["jiraComment"]["issueKey"] == "QAP-10"
     assert payload["automationDecision"]["shouldCreateAutomationTask"] is True
+    assert payload["criticDecision"]["isAcceptable"] is True
+    assert payload["validatorDecision"]["isValid"] is True
+    assert payload["governanceDecision"]["allowedForAutomation"] is True
     assert payload["automationTask"]["key"] == "QAP-123"
 
 
@@ -211,10 +276,150 @@ def test_generate_qa_report_smoke_contract(monkeypatch):
     assert "||Scenario||Steps Taken||Expected Result||Actual Result||Status||" in payload["tableView"]
 
 
+def test_pki_validate_profile_contract():
+    client = _client_with_auth_token()
+    response = client.post(
+        "/pki/validate-profile",
+        headers={"X-API-Key": "smoke-token"},
+        json={
+            "commonName": "localhost",
+            "sanDns": [],
+            "validityDays": 450,
+            "keyAlgorithm": "RSA",
+            "keySize": 2048,
+            "environment": "prod",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["compliant"] is False
+    assert payload["findings"]
+    assert payload["policyVersion"] == "v1"
+
+
+def test_pki_discover_demo_mode_contract():
+    client = _client_with_auth_token()
+    response = client.get(
+        "/pki/discover?mode=demo&target=the-internet.herokuapp.com",
+        headers={"X-API-Key": "smoke-token"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "demo"
+    assert "certificates" in payload
+
+
+def test_feedback_analysis_smoke_contract(monkeypatch):
+    client = _client_with_auth_token()
+
+    def _mock_call_llm(_prompt: str) -> str:
+        return VALID_FEEDBACK_ANALYSIS_JSON
+
+    monkeypatch.setattr("app.src.routers.generation.call_llm", _mock_call_llm)
+
+    response = client.post(
+        "/feedback/analyze-failures",
+        headers={"X-API-Key": "smoke-token"},
+        json={
+            "source": "playwright",
+            "failureReport": "Error: net::ERR_CONNECTION_REFUSED\\nExpected status 200, received 500 for /api/billing/widget-data",
+            "context": "CI run #122 failed on auth and billing suites.",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dominantClassification"] in {"flake", "environment", "regression"}
+    assert payload["findings"]
+    assert payload["suggestedJiraTaskSummary"]
+    assert payload["resolvedIssueKey"] is None
+    assert payload["jiraComment"] is None
+
+
+def test_feedback_analysis_can_auto_comment_on_jira(monkeypatch):
+    client = _client_with_auth_token()
+
+    def _mock_call_llm(_prompt: str) -> str:
+        return VALID_FEEDBACK_ANALYSIS_JSON
+
+    monkeypatch.setattr("app.src.routers.generation.call_llm", _mock_call_llm)
+    monkeypatch.setattr("app.src.routers.generation.jira_add_comment", lambda *_args, **_kwargs: {"ok": True})
+
+    response = client.post(
+        "/feedback/analyze-failures",
+        headers={"X-API-Key": "smoke-token"},
+        json={
+            "source": "playwright",
+            "issueKey": "QAP-20",
+            "commentOnJira": True,
+            "failureReport": "Error: Timeout 30000ms exceeded while waiting for locator",
+            "context": "Nightly run on chrome only.",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["resolvedIssueKey"] == "QAP-20"
+    assert payload["jiraComment"]["issueKey"] == "QAP-20"
+    assert payload["jiraComment"]["status"] == "comment_added"
+
+
+def test_feedback_analysis_requires_issue_key_for_auto_comment(monkeypatch):
+    client = _client_with_auth_token()
+
+    def _mock_call_llm(_prompt: str) -> str:
+        return VALID_FEEDBACK_ANALYSIS_JSON
+
+    monkeypatch.setattr("app.src.routers.generation.call_llm", _mock_call_llm)
+
+    response = client.post(
+        "/feedback/analyze-failures",
+        headers={"X-API-Key": "smoke-token"},
+        json={
+            "source": "playwright",
+            "commentOnJira": True,
+            "failureReport": "Error: net::ERR_CONNECTION_REFUSED",
+        },
+    )
+    assert response.status_code == 400
+    assert "Could not resolve issueKey" in response.json()["detail"]
+
+
+def test_feedback_analysis_can_infer_issue_key_from_branch(monkeypatch):
+    client = _client_with_auth_token()
+
+    def _mock_call_llm(_prompt: str) -> str:
+        return VALID_FEEDBACK_ANALYSIS_JSON
+
+    monkeypatch.setattr("app.src.routers.generation.call_llm", _mock_call_llm)
+    monkeypatch.setattr(
+        "app.src.routers.generation.jira_add_comment",
+        lambda *_args, **_kwargs: {"ok": True},
+    )
+
+    response = client.post(
+        "/feedback/analyze-failures",
+        headers={"X-API-Key": "smoke-token"},
+        json={
+            "source": "playwright",
+            "branchName": "feature/QAP-77-feedback-automation",
+            "commentOnJira": True,
+            "failureReport": "Error: locator timed out after 30s",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["resolvedIssueKey"] == "QAP-77"
+    assert payload["jiraComment"]["issueKey"] == "QAP-77"
+
+
 def test_jira_full_qa_flow_skips_task_when_ai_says_no(monkeypatch):
     client = _client_with_auth_token()
     responses = iter(
-        [VALID_TESTS_JSON, VALID_PLAYWRIGHT_JSON, VALID_AUTOMATION_DECISION_NO_JSON]
+        [
+            VALID_TESTS_JSON,
+            VALID_PLAYWRIGHT_JSON,
+            VALID_ARTIFACT_CRITIC_JSON,
+            VALID_AUTOMATION_DECISION_NO_JSON,
+        ]
     )
 
     def _mock_call_llm(_prompt: str) -> str:
@@ -257,9 +462,122 @@ def test_jira_full_qa_flow_skips_task_when_ai_says_no(monkeypatch):
     assert called["count"] == 0
 
 
+def test_jira_full_qa_flow_blocks_task_when_governance_fails(monkeypatch):
+    client = _client_with_auth_token()
+    responses = iter(
+        [
+            VALID_TESTS_JSON,
+            VALID_PLAYWRIGHT_JSON,
+            VALID_ARTIFACT_CRITIC_JSON,
+            VALID_AUTOMATION_DECISION_YES_JSON,
+        ]
+    )
+
+    def _mock_call_llm(_prompt: str) -> str:
+        return next(responses)
+
+    monkeypatch.setattr("app.src.routers.jira.call_llm", _mock_call_llm)
+    monkeypatch.setattr("app.src.routers.jira.jira_add_comment", lambda *args, **kwargs: {"ok": True})
+    monkeypatch.setattr(
+        "app.src.routers.jira.write_playwright_files",
+        lambda _files: ["/tmp/playwright-tests/tests/auth/login.spec.js"],
+    )
+    monkeypatch.setattr(
+        "app.src.routers.jira.evaluate_governance_gate",
+        lambda **kwargs: {
+            "framework": "ISTQB Foundation 4.0 (baseline principles mapping)",
+            "policyVersion": {"istqb": "v1", "organization": "v1"},
+            "allowedForAutomation": False,
+            "requiresHumanApproval": True,
+            "coverageRatio": 0.5,
+            "automationRisk": "high",
+            "violations": ["Coverage ratio 0.50 is below required minimum 0.75."],
+            "summary": "Governance gate blocked automation task creation.",
+        },
+    )
+
+    called = {"count": 0}
+
+    def _mock_create_issue(**kwargs):
+        called["count"] += 1
+        return {"key": "QAP-998", "summary": kwargs.get("summary", "")}
+
+    monkeypatch.setattr("app.src.routers.jira.jira_create_issue", _mock_create_issue)
+
+    response = client.post(
+        "/jira/full-qa-flow",
+        headers={"X-API-Key": "smoke-token"},
+        json={
+            "issueKey": "QAP-13",
+            "acceptanceCriteria": "Given admin and user roles, when billing page is accessed, then enforce role-based authorization with clear security messaging.",
+            "commentOnJira": True,
+            "writePlaywrightFiles": True,
+            "createAutomationTask": True,
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["automationDecision"]["shouldCreateAutomationTask"] is True
+    assert payload["governanceDecision"]["allowedForAutomation"] is False
+    assert payload["automationTask"] is None
+    assert called["count"] == 0
+
+
+def test_jira_full_qa_flow_blocks_task_when_validator_fails(monkeypatch):
+    client = _client_with_auth_token()
+    responses = iter(
+        [
+            VALID_TESTS_JSON,
+            VALID_PLAYWRIGHT_JSON,
+            VALID_ARTIFACT_CRITIC_NEEDS_FIX_JSON,
+            VALID_AUTOMATION_DECISION_YES_JSON,
+        ]
+    )
+
+    def _mock_call_llm(_prompt: str) -> str:
+        return next(responses)
+
+    monkeypatch.setattr("app.src.routers.jira.call_llm", _mock_call_llm)
+    monkeypatch.setattr("app.src.routers.jira.jira_add_comment", lambda *args, **kwargs: {"ok": True})
+    monkeypatch.setattr(
+        "app.src.routers.jira.write_playwright_files",
+        lambda _files: ["/tmp/playwright-tests/tests/auth/login.spec.js"],
+    )
+
+    called = {"count": 0}
+
+    def _mock_create_issue(**kwargs):
+        called["count"] += 1
+        return {"key": "QAP-777", "summary": kwargs.get("summary", "")}
+
+    monkeypatch.setattr("app.src.routers.jira.jira_create_issue", _mock_create_issue)
+
+    response = client.post(
+        "/jira/full-qa-flow",
+        headers={"X-API-Key": "smoke-token"},
+        json={
+            "issueKey": "QAP-14",
+            "acceptanceCriteria": "Given role-based controls, when user accesses protected endpoint, then authorization and session checks must be enforced.",
+            "commentOnJira": True,
+            "writePlaywrightFiles": True,
+            "createAutomationTask": True,
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["automationDecision"]["shouldCreateAutomationTask"] is True
+    assert payload["validatorDecision"]["isValid"] is False
+    assert payload["remediationDecision"]["action"] in {"heal", "escalate"}
+    assert payload["automationTask"] is None
+    assert called["count"] == 0
+
+
 def test_jira_full_qa_flow_async_accepts_request(monkeypatch):
     client = _client_with_auth_token()
-    monkeypatch.setattr("app.src.routers.jira._run_full_qa_flow_background", lambda _payload_data: None)
+    monkeypatch.setattr(
+        "app.src.routers.jira._run_full_qa_flow_background",
+        lambda _payload_data, _job_id: None,
+    )
 
     response = client.post(
         "/jira/full-qa-flow-async",
@@ -276,6 +594,76 @@ def test_jira_full_qa_flow_async_accepts_request(monkeypatch):
     payload = response.json()
     assert payload["status"] == "accepted"
     assert payload["mode"] == "async"
+    assert payload["jobId"]
+    assert payload["jobStatusPath"] == f"/jobs/{payload['jobId']}"
+
+    job_response = client.get(
+        f"/jobs/{payload['jobId']}",
+        headers={"X-API-Key": "smoke-token"},
+    )
+    assert job_response.status_code == 200
+    job_payload = job_response.json()
+    assert job_payload["jobId"] == payload["jobId"]
+    assert job_payload["issueKey"] == "QAP-12"
+    assert job_payload["status"] in {"pending", "running", "succeeded", "failed"}
+
+
+def test_get_async_job_status_returns_404_for_unknown_job():
+    client = _client_with_auth_token()
+    response = client.get(
+        "/jobs/non-existent-job",
+        headers={"X-API-Key": "smoke-token"},
+    )
+    assert response.status_code == 404
+
+
+def test_get_async_job_trace_returns_404_for_unknown_job():
+    client = _client_with_auth_token()
+    response = client.get(
+        "/jobs/non-existent-job/trace",
+        headers={"X-API-Key": "smoke-token"},
+    )
+    assert response.status_code == 404
+
+
+def test_list_async_jobs_supports_filters(monkeypatch):
+    client = _client_with_auth_token()
+    monkeypatch.setattr(
+        "app.src.routers.jira._run_full_qa_flow_background",
+        lambda _payload_data, _job_id: None,
+    )
+
+    for issue_key in ["QAP-30", "QAP-31"]:
+        create_response = client.post(
+            "/jira/full-qa-flow-async",
+            headers={"X-API-Key": "smoke-token"},
+            json={
+                "issueKey": issue_key,
+                "acceptanceCriteria": "Given admin role checks, when secured route is accessed, then authorization must be enforced.",
+                "commentOnJira": False,
+                "writePlaywrightFiles": False,
+                "createAutomationTask": False,
+            },
+        )
+        assert create_response.status_code == 200
+
+    list_response = client.get(
+        "/jobs?limit=10",
+        headers={"X-API-Key": "smoke-token"},
+    )
+    assert list_response.status_code == 200
+    list_payload = list_response.json()
+    assert list_payload["count"] >= 2
+    assert list_payload["jobs"]
+
+    filtered_response = client.get(
+        "/jobs?issueKey=QAP-31&limit=10",
+        headers={"X-API-Key": "smoke-token"},
+    )
+    assert filtered_response.status_code == 200
+    filtered_payload = filtered_response.json()
+    assert filtered_payload["filters"]["issueKey"] == "QAP-31"
+    assert all(job["issueKey"] == "QAP-31" for job in filtered_payload["jobs"])
 
 
 def test_create_issue_falls_back_from_subtask_to_task(monkeypatch):

@@ -21,10 +21,12 @@ class Settings:
     jira_api_token: str | None
     jira_project_key: str | None
     base_url: str | None
+    job_db_path: str
 
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
+    default_job_db_path = str(BASE_DIR / ".data" / "jobs.db")
     return Settings(
         gemini_api_key=os.getenv("GEMINI_API_KEY"),
         gemini_model=os.getenv("GEMINI_MODEL", "models/gemini-2.5-flash"),
@@ -34,4 +36,5 @@ def get_settings() -> Settings:
         jira_api_token=os.getenv("JIRA_API_TOKEN"),
         jira_project_key=os.getenv("JIRA_PROJECT_KEY"),
         base_url=os.getenv("BASE_URL"),
+        job_db_path=os.getenv("JOB_DB_PATH", default_job_db_path),
     )

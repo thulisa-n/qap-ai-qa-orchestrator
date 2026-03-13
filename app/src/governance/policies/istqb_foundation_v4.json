@@ -1,0 +1,23 @@
+{
+  "framework": "ISTQB Foundation 4.0 (baseline principles mapping)",
+  "version": "v1",
+  "principles": [
+    {
+      "id": "ISTQB-TRACEABILITY",
+      "description": "Coverage must map tests back to requirements."
+    },
+    {
+      "id": "ISTQB-RISK-BASED",
+      "description": "Risk and criticality must influence automation strategy."
+    },
+    {
+      "id": "ISTQB-DEFECT-CLUSTERING",
+      "description": "High-risk areas should include focused security/regression checks."
+    }
+  ],
+  "enforcement": {
+    "minCoverageRatioForAutomation": 0.7,
+    "requireSecurityScenarioForAutomation": true,
+    "maxAllowedAutomationRisk": "medium"
+  }
+}

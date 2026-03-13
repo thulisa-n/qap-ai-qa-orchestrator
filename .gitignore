@@ -6,6 +6,7 @@ __pycache__/
 # Environment variables
 .env
 app/.env
+app/.data/
 playwright-tests/.env
 
 # Node

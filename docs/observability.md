@@ -11,6 +11,8 @@ QAP orchestrates Jira webhooks, AI generation, and file output. When something f
 - Baseline HTTP errors and retries exist for Jira calls.
 - CI catches regressions for backend contracts and Playwright tests.
 - Async flow endpoint avoids webhook timeout pressure.
+- Async flow now returns a `jobId`, with status visibility via `GET /jobs/{jobId}`.
+- GitHub Actions uploads backend and Playwright execution trace artifacts for run-level debugging.
 
 ## Gaps to close for production readiness
 - No structured logs with correlation IDs.
@@ -51,9 +53,12 @@ Set alerts for:
 - prolonged queue/worker lag (if queue is introduced)
 
 ### 5) Async workflow visibility
-- Add a job store (or queue backend) and expose:
+- Current: durable SQLite-backed job tracking with:
   - `POST /jira/full-qa-flow-async` -> returns `jobId`
   - `GET /jobs/{jobId}` -> `pending|running|succeeded|failed` + timestamps
+  - `GET /jobs/{jobId}/trace` -> execution steps and gate decisions (validator/remediation/governance)
+  - `GET /jobs` -> recent job listing with optional `status`, `issueKey`, `limit`
+- Next: move execution to a dedicated queue/worker model (while keeping durable status store).
 
 ## Suggested phased rollout
 1. Add JSON logging + correlation IDs.

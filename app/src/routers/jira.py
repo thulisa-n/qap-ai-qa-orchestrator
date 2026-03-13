@@ -1,8 +1,13 @@
 import re
+from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
+from app.src.agents.remediation_agent import plan_remediation
+from app.src.agents.validator_agent import validate_agent_outputs
+from app.src.governance.engine import evaluate_governance_gate
 from app.src.schemas import (
+    ArtifactCriticDecision,
     AutomationDecision,
     FullQAFlowRequest,
     GeneratePlaywrightRequest,
@@ -10,8 +15,19 @@ from app.src.schemas import (
     GenerateTestsResponse,
     JiraAutomationTaskRequest,
     JiraCommentRequest,
+    RemediationDecision,
+    ValidatorDecision,
 )
 from app.src.services.file_service import write_playwright_files
+from app.src.services.job_service import (
+    create_job,
+    get_job,
+    get_job_trace,
+    list_jobs,
+    mark_job_failed,
+    mark_job_running,
+    mark_job_succeeded,
+)
 from app.src.services.jira_service import (
     format_tests_for_jira,
     jira_add_comment,
@@ -19,6 +35,7 @@ from app.src.services.jira_service import (
     jira_link_issues,
 )
 from app.src.services.llm_service import (
+    build_artifact_critic_prompt,
     build_automation_decision_prompt,
     build_playwright_prompt,
     build_tests_prompt,
@@ -165,6 +182,70 @@ def _format_coverage_report_for_jira(coverage_report: dict) -> str:
     return "\n".join(lines)
 
 
+def _format_governance_report_for_jira(governance_decision: dict) -> str:
+    lines = [
+        "h3. QAP Governance Gate",
+        f"*Framework:* {governance_decision.get('framework', 'ISTQB Foundation 4.0')}",
+        f"*Allowed for automation:* {'Yes' if governance_decision.get('allowedForAutomation') else 'No'}",
+        f"*Requires human approval:* {'Yes' if governance_decision.get('requiresHumanApproval') else 'No'}",
+        f"*Coverage ratio:* {governance_decision.get('coverageRatio', 0.0)}",
+        f"*Automation risk:* {governance_decision.get('automationRisk', 'unknown')}",
+    ]
+    violations = governance_decision.get("violations", [])
+    if violations:
+        lines.append("*Policy violations:*")
+        lines.extend([f"- {violation}" for violation in violations])
+    else:
+        lines.append("*Policy violations:* None")
+    lines.append(f"*Summary:* {governance_decision.get('summary', 'No summary provided.')}")
+    return "\n".join(lines)
+
+
+def _format_critic_report_for_jira(critic_decision: ArtifactCriticDecision) -> str:
+    lines = [
+        "h3. QAP Critic Validation",
+        f"*Overall score:* {critic_decision.overallScore}",
+        f"*Scenario quality:* {critic_decision.scenarioQualityScore}",
+        f"*Playwright quality:* {critic_decision.playwrightQualityScore}",
+        f"*Acceptable for handoff:* {'Yes' if critic_decision.isAcceptable else 'No'}",
+        f"*Verdict:* {critic_decision.verdict}",
+    ]
+    if critic_decision.findings:
+        lines.append("*Findings:*")
+        lines.extend([f"- {finding}" for finding in critic_decision.findings])
+    if critic_decision.recommendations:
+        lines.append("*Recommendations:*")
+        lines.extend([f"- {item}" for item in critic_decision.recommendations])
+    return "\n".join(lines)
+
+
+def _format_validator_report_for_jira(validator_decision: ValidatorDecision) -> str:
+    lines = [
+        "h3. QAP Validator Gate",
+        f"*Valid:* {'Yes' if validator_decision.isValid else 'No'}",
+        f"*Verdict:* {validator_decision.verdict}",
+    ]
+    if validator_decision.findings:
+        lines.append("*Findings:*")
+        lines.extend([f"- {item}" for item in validator_decision.findings])
+    if validator_decision.suggestedFixes:
+        lines.append("*Suggested fixes:*")
+        lines.extend([f"- {item}" for item in validator_decision.suggestedFixes])
+    return "\n".join(lines)
+
+
+def _format_remediation_report_for_jira(remediation_decision: RemediationDecision) -> str:
+    lines = [
+        "h3. QAP Remediation Decision",
+        f"*Action:* {remediation_decision.action}",
+        f"*Status:* {remediation_decision.status}",
+    ]
+    if remediation_decision.notes:
+        lines.append("*Notes:*")
+        lines.extend([f"- {item}" for item in remediation_decision.notes])
+    return "\n".join(lines)
+
+
 def _create_issue_with_fallback(
     *,
     summary: str,
@@ -215,6 +296,15 @@ def _run_full_qa_flow(payload: FullQAFlowRequest) -> dict:
     pw_text = call_llm(pw_prompt)
     playwright = GeneratePlaywrightResponse.model_validate_json(pw_text)
 
+    critic_prompt = build_artifact_critic_prompt(
+        payload.acceptanceCriteria,
+        payload.context,
+        tests.model_dump_json(),
+        playwright.model_dump_json(),
+    )
+    critic_text = call_llm(critic_prompt)
+    critic_decision = ArtifactCriticDecision.model_validate_json(critic_text)
+
     decision_prompt = build_automation_decision_prompt(
         payload.acceptanceCriteria,
         payload.context,
@@ -222,6 +312,19 @@ def _run_full_qa_flow(payload: FullQAFlowRequest) -> dict:
     )
     decision_text = call_llm(decision_prompt)
     automation_decision = AutomationDecision.model_validate_json(decision_text)
+    validator_decision = validate_agent_outputs(
+        tests=tests,
+        playwright=playwright,
+        critic=critic_decision,
+        automation=automation_decision,
+    )
+    remediation_decision = plan_remediation(validator_decision)
+    governance_decision = evaluate_governance_gate(
+        coverage_report=coverage_report,
+        tests=tests,
+        automation_decision=automation_decision,
+        critic_decision=critic_decision,
+    )
     if payload.commentOnJira:
         decision_comment_lines = [
             "h3. AI QA Agent Decision",
@@ -237,13 +340,26 @@ def _run_full_qa_flow(payload: FullQAFlowRequest) -> dict:
                 [f"- {risk_reason}" for risk_reason in automation_decision.riskReasons]
             )
         jira_add_comment(payload.issueKey, "\n".join(decision_comment_lines))
+        jira_add_comment(payload.issueKey, _format_critic_report_for_jira(critic_decision))
+        jira_add_comment(payload.issueKey, _format_validator_report_for_jira(validator_decision))
+        if remediation_decision.action != "none":
+            jira_add_comment(
+                payload.issueKey,
+                _format_remediation_report_for_jira(remediation_decision),
+            )
+        jira_add_comment(payload.issueKey, _format_governance_report_for_jira(governance_decision))
 
     files_written = None
     if payload.writePlaywrightFiles:
         files_written = write_playwright_files(playwright.files)
 
     task_created = None
-    if payload.createAutomationTask and automation_decision.shouldCreateAutomationTask:
+    if (
+        payload.createAutomationTask
+        and automation_decision.shouldCreateAutomationTask
+        and validator_decision.isValid
+        and governance_decision["allowedForAutomation"]
+    ):
         summary = f"{payload.issueKey} | {payload.automationSummaryPrefix}"
         description = (
             "Automation Decision\n"
@@ -289,7 +405,25 @@ def _run_full_qa_flow(payload: FullQAFlowRequest) -> dict:
 
     return {
         "status": "ok",
+        "executionTrace": {
+            "steps": [
+                "generate_tests",
+                "analyze_coverage",
+                "generate_playwright",
+                "critic_validation",
+                "automation_decision",
+                "validator_gate",
+                "remediation_planning",
+                "governance_gate",
+                "jira_reporting",
+            ],
+            "taskCreated": bool(task_created),
+        },
         "automationDecision": automation_decision.model_dump(),
+        "criticDecision": critic_decision.model_dump(),
+        "validatorDecision": validator_decision.model_dump(),
+        "remediationDecision": remediation_decision.model_dump(),
+        "governanceDecision": governance_decision,
         "coverageReport": coverage_report,
         "jiraComment": jira_comment,
         "tests": tests.model_dump(),
@@ -422,12 +556,15 @@ def jira_full_qa_flow(
         raise HTTPException(status_code=500, detail="Internal server error.")
 
 
-def _run_full_qa_flow_background(payload_data: dict) -> None:
+def _run_full_qa_flow_background(payload_data: dict, job_id: str) -> None:
     try:
+        mark_job_running(job_id)
         payload = FullQAFlowRequest.model_validate(payload_data)
-        _run_full_qa_flow(payload)
+        result = _run_full_qa_flow(payload)
+        mark_job_succeeded(job_id, result)
     except Exception as exc:
         issue_key = payload_data.get("issueKey", "unknown-issue")
+        mark_job_failed(job_id, str(exc))
         print(f"[jira/full-qa-flow-async] background error for {issue_key}: {exc}")
 
 
@@ -438,10 +575,16 @@ def jira_full_qa_flow_async(
     _: None = Depends(require_api_key),
 ) -> dict:
     try:
-        background_tasks.add_task(_run_full_qa_flow_background, payload.model_dump())
+        job_id = str(uuid4())
+        create_job(job_id=job_id, issue_key=payload.issueKey)
+        background_tasks.add_task(
+            _run_full_qa_flow_background, payload.model_dump(), job_id
+        )
         return {
             "status": "accepted",
             "mode": "async",
+            "jobId": job_id,
+            "jobStatusPath": f"/jobs/{job_id}",
             "issueKey": payload.issueKey,
             "message": "Full QA flow started in background.",
         }
@@ -449,3 +592,41 @@ def jira_full_qa_flow_async(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception:
         raise HTTPException(status_code=500, detail="Internal server error.")
+
+
+@router.get("/jobs/{job_id}", operation_id="get_async_job_status")
+def get_async_job_status(
+    job_id: str,
+    _: None = Depends(require_api_key),
+) -> dict:
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return job
+
+
+@router.get("/jobs/{job_id}/trace", operation_id="get_async_job_trace")
+def get_async_job_trace(
+    job_id: str,
+    _: None = Depends(require_api_key),
+) -> dict:
+    trace = get_job_trace(job_id)
+    if not trace:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return trace
+
+
+@router.get("/jobs", operation_id="list_async_jobs")
+def list_async_jobs(
+    limit: int = Query(default=20, ge=1, le=200),
+    status: str | None = Query(default=None, pattern="^(pending|running|succeeded|failed)$"),
+    issue_key: str | None = Query(default=None, alias="issueKey"),
+    _: None = Depends(require_api_key),
+) -> dict:
+    jobs = list_jobs(limit=limit, status=status, issue_key=issue_key)
+    return {
+        "count": len(jobs),
+        "limit": limit,
+        "filters": {"status": status, "issueKey": issue_key},
+        "jobs": jobs,
+    }

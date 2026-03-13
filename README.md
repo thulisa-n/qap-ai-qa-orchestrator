@@ -9,6 +9,7 @@ QA teams lose time manually translating Jira Acceptance Criteria into test scena
 2. Jira Automation calls `POST /jira/full-qa-flow-async`.
 3. QAP posts:
    - AI-generated test scenarios
+   - Critic validation (scenario/playwright quality score + recommendations)
    - Acceptance Criteria coverage report (`covered`/`missing`)
    - AI QA Agent decision (automation recommendation + risk)
 4. QAP writes Playwright skeleton files and can create a linked automation task.
@@ -22,19 +23,51 @@ QA teams lose time manually translating Jira Acceptance Criteria into test scena
 Jira Ticket (Acceptance Criteria)
               |
               v
-      QAP AI QA Agent Controller
+   Jira Automation -> /jira/full-qa-flow-async
               |
-    +---------+---------+-----------+
-    |         |         |           |
-    v         v         v           v
-Scenario   Coverage   Automation   Playwright
-Tool       Tool       Decision     Tool
-                     (incl. risk)
-              \         |         /
-               \        |        /
-                v       v       v
-           Jira Comments + Linked Task + Test Files
+              v
+      QAP Agentic Controller
+              |
+      +-------+-------+-----------------------------+
+      |               |                             |
+      v               v                             v
+  Scenario Gen    Playwright Gen               Async Job Store
+      |               |                         (SQLite + /jobs)
+      +-------+-------+
+              v
+         Critic Agent
+              |
+              v
+     Governance Policy Gate
+   (ISTQB + Org source-of-truth)
+              |
+      +-------+-----------------------------+
+      |                                     |
+      v                                     v
+ Jira comments (scenarios/critic/      Linked automation task
+ governance/decision)                  (only when policy allows)
+
+ Closed-loop path:
+ CI failure logs -> /feedback/analyze-failures -> classify flake/environment/regression -> Jira feedback comment
 ```
+
+## Agentic Flow Logic
+QAP follows a practical agentic loop with explicit control gates:
+
+1. **Reason:** Parse AC and context, determine needed QA artifacts.
+2. **Tool:** Generate scenarios and Playwright templates.
+3. **Observe:** Evaluate coverage, run critic scoring, assess automation risk.
+4. **Adjust:** Apply governance rules (ISTQB + org policy) before creating automation work.
+5. **Act:** Post structured Jira comments and create linked tasks only when gates pass.
+6. **Learn:** Analyze failed CI runs via closed-loop feedback and feed recommendations back into Jira.
+
+This keeps AI behavior powerful but bounded: automation is never “blindly accepted,” and human QA remains the final authority.
+
+## Verification & Remediation Agents
+- **Validator Agent:** deterministic checks on agent outputs (minimum scenarios/files, critic verdict consistency, automation decision consistency).
+- **Remediation Agent:** decides `none|heal|escalate` when validator fails.
+- Full QA flow now returns both `validatorDecision` and `remediationDecision`.
+- Automation task creation is blocked when validator gate fails, even if AI recommends automation.
 
 ## Tech Stack
 - Python + FastAPI
@@ -44,6 +77,23 @@ Tool       Tool       Decision     Tool
 - Playwright
 - Pytest
 - Bitbucket Pipelines + GitHub Actions
+
+## CI Security Checks
+- CI runs explicit security regression tests from `app/tests/test_security.py` on both GitHub Actions and Bitbucket Pipelines.
+- CI also runs security scans:
+  - SAST: `bandit -r app/src`
+  - Dependency scan: `pip-audit -r app/requirements.txt`
+- Scan policy:
+  - `main`: blocking (pipeline fails on findings)
+  - feature/PR branches: non-blocking visibility mode
+- Security docs and evidence are in `docs/security-hardening-report.md`.
+- GitHub Actions uploads backend/playwright trace artifacts for transparent debugging in the Actions UI.
+
+## GitHub Debug Transparency
+- Each GitHub Actions run publishes artifacts:
+  - `backend-traces-<run_id>` (security/backend test logs)
+  - `playwright-traces-<run_id>` (Playwright logs and reports)
+- This gives hiring managers and reviewers direct run-level traceability without local reproduction.
 
 ## Why Playwright-first
 This project is intentionally Playwright-first to maximize depth, stability, and execution quality on one automation platform.
@@ -65,21 +115,77 @@ Open:
 - Swagger: `http://127.0.0.1:8000/docs`
 - Health: `http://127.0.0.1:8000/health`
 
+## Docker Quickstart
+```bash
+cp app/.env.example app/.env
+docker compose up --build
+```
+
+Open:
+- Swagger: `http://127.0.0.1:8000/docs`
+- Health: `http://127.0.0.1:8000/health`
+
+Notes:
+- Async job tracking is persisted in SQLite at `JOB_DB_PATH` (default: `app/.data/jobs.db`).
+- In Docker, job data is persisted via the `qap_job_data` volume.
+
 ## Core Endpoints
 - `POST /jira/full-qa-flow-async` (recommended webhook target)
+- `GET /jobs/{jobId}` (async QA flow status: `pending|running|succeeded|failed`)
+- `GET /jobs/{jobId}/trace` (execution trace + validator/remediation/governance decisions)
+- `GET /jobs` (list recent jobs, supports `status`, `issueKey`, and `limit` filters)
 - `POST /jira/full-qa-flow`
 - `POST /generate-both`
 - `POST /generate-qa-report` (structured QA report template from AC/requirements)
+- `POST /feedback/analyze-failures` (closed-loop failure triage: flake vs environment vs regression)
+- `POST /pki/validate-profile` (hybrid PKI policy-as-code profile validation demo)
+- `GET /pki/discover` (hybrid domain adapter: `demo|real_pki`)
 - `GET /health`
 
 ## Documentation
 - Architecture: `docs/architecture.md`
 - Jira automation rules and payload schemas: `docs/jira-automation-rules.md`
 - Runbook and troubleshooting: `docs/runbook-troubleshooting.md`
+- Closed-loop feedback runbook: `docs/closed-loop-feedback.md`
+- CI failure notification setup: `docs/ci-failure-notification-setup.md`
+- Go-live checklist: `docs/go-live-checklist.md`
+- PKI hybrid mode: `docs/pki-hybrid-mode.md`
 - Security: `docs/security-hardening-report.md`
 - Observability: `docs/observability.md`
 - PoC rollout: `docs/poc-implementation-guide.md`
 - Contribution guide: `CONTRIBUTING.md`
+
+## Source-of-Truth Governance (Phase 1)
+- Governance policies are versioned in:
+  - `app/src/governance/policies/istqb_foundation_v4.json`
+  - `app/src/governance/policies/org_policy.json`
+- The full QA flow now evaluates these policy files before creating automation tasks.
+- Policy checks currently enforce:
+  - minimum AC coverage ratio threshold
+  - required security-focused scenario presence
+  - max allowed automation risk
+- A critic pass also scores generated artifacts; policy requires critic acceptance and minimum overall score before automation task creation.
+- Result is surfaced in Jira comments as `QAP Governance Gate` and returned in API response as `governanceDecision`.
+- This keeps AI recommendations bounded by auditable QA standards, while human QA remains the final decision maker.
+
+## Closed-Loop Feedback Agent Starter (Phase 3)
+- Send failed test output (Playwright/JUnit/generic) to `POST /feedback/analyze-failures`.
+- QAP classifies failures as `flake`, `environment`, or `regression`.
+- Optional Jira auto-comment mode:
+  - set `commentOnJira: true`
+  - provide `issueKey` (recommended), or include issue key in `branchName/context` so QAP can infer it
+- Response includes:
+  - per-test findings with evidence and suggested action
+  - dominant failure classification and confidence
+  - suggested regression tests
+  - suggested Jira follow-up task summary
+- This closes the loop from execution failures back into backlog-ready QA actions.
+- CI auto-trigger support is included:
+  - GitHub Actions and Bitbucket pipeline can auto-call `POST /feedback/analyze-failures` when Playwright fails.
+  - Configure CI secrets/variables:
+    - `QAP_API_BASE_URL`
+    - `QAP_API_AUTH_TOKEN`
+    - optional `JIRA_ISSUE_KEY` (fallback when branch/context does not include ticket key)
 
 ## Playwright test scopes
 - Demo-verified runnable suite: `playwright-tests/tests/auth.spec.js` (works against `the-internet.herokuapp.com`)

@@ -1,0 +1,13 @@
+{
+  "framework": "PKI Compliance Baseline (demo policy)",
+  "version": "v1",
+  "baseline": {
+    "minValidityDays": 1,
+    "maxValidityDays": 398,
+    "minimumRsaKeySize": 2048
+  },
+  "notes": [
+    "Demo policy for profile validation endpoint.",
+    "Use organization-specific CP/CPS and CA/B Forum mapping in production."
+  ]
+}

@@ -76,7 +76,10 @@ Security value:
   - API auth enforcement checks
   - prompt-injection rejection behavior
   - path traversal rejection and safe-path acceptance
-- Wired into Bitbucket PR pipeline (`pytest app/tests -q`).
+- Wired into CI as explicit security stage checks:
+  - GitHub Actions: `python -m pytest app/tests/test_security.py -q`
+  - Bitbucket Pipelines: `python -m pytest app/tests/test_security.py -q`
+- Security tests also run inside broader backend test runs (`pytest app/tests -q`).
 
 Security value:
 - Prevents silent regressions in key controls during future development.
@@ -131,6 +134,18 @@ For enterprise/security questionnaires, describe controls in three layers:
 6. Add WAF/API gateway in front of service.
 7. Add unit/integration security tests for prompt and path abuse regressions.
 8. Add auth upgrade path (OIDC/JWT/mTLS) for B2B customers.
+
+## CI SAST/SCA checks (new)
+
+- Added lightweight SAST scan with `bandit` over `app/src`.
+- Added dependency vulnerability scan with `pip-audit` against `app/requirements.txt`.
+- Configured with branch-aware policy:
+  - `main`: blocking enforcement
+  - non-main branches: non-blocking visibility mode
+
+Why this policy:
+- Keeps release branch security-gated.
+- Preserves fast iteration on feature branches while still surfacing findings early.
 
 ## Verification checklist for security testing
 

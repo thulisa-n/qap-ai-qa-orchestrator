@@ -5,22 +5,88 @@ definitions:
         image: python:3.13
         caches:
           - pip
+        artifacts:
+          - security-test.log
+          - backend-test.log
         script:
           - pip install -r app/requirements.txt
-          - python -m py_compile app/src/*.py app/src/routers/*.py app/src/services/*.py
+          - pip install bandit pip-audit
+          - python -m py_compile app/src/*.py app/src/routers/*.py app/src/services/*.py app/src/governance/*.py app/src/agents/*.py app/src/domain/*.py
           - python -c "from app.src.app import app; print('FastAPI app import OK:', bool(app))"
-          - PYTHONPATH=. python -m pytest app/tests -q
+          - PYTHONPATH=. python -m pytest app/tests/test_security.py -q > security-test.log 2>&1 || (cat security-test.log && exit 1)
+          - cat security-test.log
+          - PYTHONPATH=. python -m pytest app/tests -q > backend-test.log 2>&1 || (cat backend-test.log && exit 1)
+          - cat backend-test.log
+          - |
+            if [ "$BITBUCKET_BRANCH" = "main" ]; then
+              bandit -q -r app/src
+              pip-audit -r app/requirements.txt
+            else
+              bandit -q -r app/src || true
+              pip-audit -r app/requirements.txt || true
+            fi
 
     - step: &playwright_tests
         name: Run Playwright Tests
         image: node:20
         caches:
           - node
+        artifacts:
+          - playwright-failure.log
         script:
           - cd playwright-tests
           - npm ci || npm install
           - npx playwright install --with-deps
-          - BASE_URL=https://the-internet.herokuapp.com TEST_USER=tomsmith TEST_PASS=SuperSecretPassword! npm test
+          - |
+            set +e
+            BASE_URL=https://the-internet.herokuapp.com TEST_USER=tomsmith TEST_PASS=SuperSecretPassword! npm test 2>&1 | tee ../playwright-failure.log
+            TEST_EXIT=$?
+            if [ "$TEST_EXIT" -ne 0 ] && [ -n "$QAP_API_BASE_URL" ] && [ -n "$QAP_API_AUTH_TOKEN" ]; then
+              python - <<'PY'
+              import json
+              import os
+              import urllib.request
+              import urllib.error
+              from pathlib import Path
+
+              report_path = Path("../playwright-failure.log")
+              report = report_path.read_text(encoding="utf-8", errors="ignore") if report_path.exists() else "Playwright failed, but failure log file was missing."
+              if len(report) > 20000:
+                  report = report[-20000:]
+
+              branch_name = os.getenv("BITBUCKET_BRANCH", "")
+              run_url = f"https://bitbucket.org/{os.getenv('BITBUCKET_REPO_FULL_NAME')}/pipelines/results/{os.getenv('BITBUCKET_BUILD_NUMBER')}"
+              payload = {
+                  "source": "playwright",
+                  "issueKey": os.getenv("JIRA_ISSUE_KEY") or None,
+                  "branchName": branch_name or None,
+                  "commentOnJira": True,
+                  "failureReport": report,
+                  "context": f"Bitbucket pipeline failure. Branch: {branch_name}. Run: {run_url}",
+              }
+
+              base_url = os.getenv("QAP_API_BASE_URL", "").rstrip("/")
+              req = urllib.request.Request(
+                  f"{base_url}/feedback/analyze-failures",
+                  data=json.dumps(payload).encode("utf-8"),
+                  headers={
+                      "Content-Type": "application/json",
+                      "X-API-Key": os.getenv("QAP_API_AUTH_TOKEN", ""),
+                  },
+                  method="POST",
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      print("QAP failure notification status:", response.status)
+                      print(response.read().decode("utf-8", errors="ignore"))
+              except urllib.error.HTTPError as exc:
+                  body = exc.read().decode("utf-8", errors="ignore")
+                  print(f"QAP failure notification HTTP error: {exc.code} {body}")
+              except Exception as exc:
+                  print(f"QAP failure notification error: {exc}")
+              PY
+            fi
+            exit "$TEST_EXIT"
 
 pipelines:
   branches:

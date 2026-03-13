@@ -6,6 +6,7 @@ from pydantic import AliasChoices, BaseModel, Field, field_validator
 MAX_ACCEPTANCE_CRITERIA_CHARS = 10000
 MAX_CONTEXT_CHARS = 8000
 MAX_FILE_CONTENT_CHARS = 200000
+MAX_FEEDBACK_REPORT_CHARS = 300000
 
 
 class GenerateTestsRequest(BaseModel):
@@ -52,6 +53,21 @@ class GenerateQAReportRequest(BaseModel):
         max_length=MAX_ACCEPTANCE_CRITERIA_CHARS,
     )
     context: str | None = Field(default=None, max_length=MAX_CONTEXT_CHARS)
+
+
+class AnalyzeFeedbackRequest(BaseModel):
+    failureReport: str = Field(
+        validation_alias=AliasChoices("failureReport", "failure_report"),
+        min_length=20,
+        max_length=MAX_FEEDBACK_REPORT_CHARS,
+    )
+    source: str = Field(default="playwright", pattern="^(playwright|junit|generic)$")
+    context: str | None = Field(default=None, max_length=MAX_CONTEXT_CHARS)
+    branchName: str | None = Field(
+        default=None, validation_alias=AliasChoices("branchName", "branch_name")
+    )
+    issueKey: str | None = None
+    commentOnJira: bool = False
 
 
 class JiraAutomationTaskRequest(BaseModel):
@@ -191,10 +207,73 @@ class AutomationDecision(BaseModel):
     riskReasons: list[str] = Field(default_factory=list, max_length=5)
 
 
+class ArtifactCriticDecision(BaseModel):
+    overallScore: float = Field(ge=0.0, le=1.0)
+    scenarioQualityScore: float = Field(ge=0.0, le=1.0)
+    playwrightQualityScore: float = Field(ge=0.0, le=1.0)
+    isAcceptable: bool
+    findings: list[str] = Field(default_factory=list, max_length=10)
+    recommendations: list[str] = Field(default_factory=list, max_length=10)
+    verdict: str = Field(pattern="^(pass|needs_revision)$")
+
+
+class ValidatorDecision(BaseModel):
+    isValid: bool
+    verdict: str = Field(pattern="^(pass|needs_fix|fail)$")
+    findings: list[str] = Field(default_factory=list, max_length=15)
+    suggestedFixes: list[str] = Field(default_factory=list, max_length=15)
+
+
+class RemediationDecision(BaseModel):
+    action: str = Field(pattern="^(none|retry|heal|escalate)$")
+    status: str = Field(pattern="^(not_needed|succeeded|failed|escalated)$")
+    notes: list[str] = Field(default_factory=list, max_length=15)
+
+
+class FailedTestInsight(BaseModel):
+    testName: str
+    classification: str = Field(pattern="^(flake|environment|regression)$")
+    confidence: float = Field(ge=0.0, le=1.0)
+    evidence: list[str] = Field(default_factory=list, max_length=8)
+    suggestedAction: str
+
+
+class FeedbackAnalysisResponse(BaseModel):
+    summary: str
+    dominantClassification: str = Field(pattern="^(flake|environment|regression)$")
+    confidence: float = Field(ge=0.0, le=1.0)
+    findings: list[FailedTestInsight]
+    recommendations: list[str] = Field(default_factory=list, max_length=10)
+    suggestedRegressionTests: list[str] = Field(default_factory=list, max_length=10)
+    suggestedJiraTaskSummary: str
+    resolvedIssueKey: str | None = None
+    jiraComment: dict[str, Any] | None = None
+
+
+class PKIProfileValidationRequest(BaseModel):
+    commonName: str = Field(min_length=3, max_length=255)
+    sanDns: list[str] = Field(default_factory=list, max_length=50)
+    validityDays: int = Field(ge=1, le=825)
+    keyAlgorithm: str = Field(pattern="^(RSA|ECDSA)$")
+    keySize: int = Field(ge=2048, le=16384)
+    environment: str = Field(default="prod", pattern="^(prod|staging|dev)$")
+
+
+class PKIProfileValidationResponse(BaseModel):
+    compliant: bool
+    policyVersion: str
+    findings: list[str] = Field(default_factory=list, max_length=20)
+    recommendations: list[str] = Field(default_factory=list, max_length=20)
+
+
 class FullQAFlowResponse(BaseModel):
     scenarios: dict[str, Any]
     playwright: dict[str, Any]
     automationDecision: dict[str, Any] | None = None
+    criticDecision: dict[str, Any] | None = None
+    validatorDecision: dict[str, Any] | None = None
+    remediationDecision: dict[str, Any] | None = None
+    governanceDecision: dict[str, Any] | None = None
     coverageReport: dict[str, Any] | None = None
     jiraComment: dict[str, Any] | None = None
     filesWritten: dict[str, Any] | None = None

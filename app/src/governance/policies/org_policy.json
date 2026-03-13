@@ -1,0 +1,12 @@
+{
+  "organization": "default",
+  "version": "v1",
+  "overrides": {
+    "minCoverageRatioForAutomation": 0.75,
+    "requireSecurityScenarioForAutomation": true,
+    "maxAllowedAutomationRisk": "medium",
+    "requireHumanApprovalAtRisk": "high",
+    "requireCriticAcceptableForAutomation": true,
+    "minCriticOverallScoreForAutomation": 0.7
+  }
+}

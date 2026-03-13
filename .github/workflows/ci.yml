@@ -25,13 +25,53 @@ jobs:
         run: pip install -r app/requirements.txt
 
       - name: Compile backend modules
-        run: python -m py_compile app/src/*.py app/src/routers/*.py app/src/services/*.py
+        run: python -m py_compile app/src/*.py app/src/routers/*.py app/src/services/*.py app/src/governance/*.py app/src/agents/*.py app/src/domain/*.py
 
       - name: Import FastAPI app
         run: python -c "from app.src.app import app; print('FastAPI app import OK:', bool(app))"
 
+      - name: Run security regression tests
+        shell: bash
+        run: |
+          set -o pipefail
+          PYTHONPATH=. python -m pytest app/tests/test_security.py -q 2>&1 | tee security-test.log
+
       - name: Run backend tests
-        run: PYTHONPATH=. python -m pytest app/tests -q
+        shell: bash
+        run: |
+          set -o pipefail
+          PYTHONPATH=. python -m pytest app/tests -q 2>&1 | tee backend-test.log
+
+      - name: Install security scanners
+        run: pip install bandit pip-audit
+
+      - name: Run Bandit (blocking on main)
+        if: ${{ github.ref == 'refs/heads/main' }}
+        run: bandit -q -r app/src
+
+      - name: Run pip-audit (blocking on main)
+        if: ${{ github.ref == 'refs/heads/main' }}
+        run: pip-audit -r app/requirements.txt
+
+      - name: Run Bandit (non-blocking on non-main)
+        if: ${{ github.ref != 'refs/heads/main' }}
+        continue-on-error: true
+        run: bandit -q -r app/src
+
+      - name: Run pip-audit (non-blocking on non-main)
+        if: ${{ github.ref != 'refs/heads/main' }}
+        continue-on-error: true
+        run: pip-audit -r app/requirements.txt
+
+      - name: Upload backend execution traces
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-traces-${{ github.run_id }}
+          path: |
+            security-test.log
+            backend-test.log
+          retention-days: 14
 
   playwright:
     name: Run Playwright Tests
@@ -55,9 +95,82 @@ jobs:
         run: npx playwright install --with-deps
 
       - name: Run Playwright tests
+        id: playwright_tests
         working-directory: playwright-tests
         env:
           BASE_URL: https://the-internet.herokuapp.com
           TEST_USER: tomsmith
           TEST_PASS: SuperSecretPassword!
-        run: npm test
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee ../playwright-failure.log
+
+      - name: Notify QAP on Playwright failure
+        if: ${{ failure() && secrets.QAP_API_BASE_URL != '' && secrets.QAP_API_AUTH_TOKEN != '' }}
+        continue-on-error: true
+        env:
+          QAP_API_BASE_URL: ${{ secrets.QAP_API_BASE_URL }}
+          QAP_API_AUTH_TOKEN: ${{ secrets.QAP_API_AUTH_TOKEN }}
+          JIRA_ISSUE_KEY: ${{ secrets.JIRA_ISSUE_KEY }}
+          GITHUB_HEAD_REF: ${{ github.head_ref }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+          import urllib.error
+          from pathlib import Path
+
+          report_path = Path("playwright-failure.log")
+          report = report_path.read_text(encoding="utf-8", errors="ignore") if report_path.exists() else "Playwright failed, but failure log file was missing."
+          if len(report) > 20000:
+              report = report[-20000:]
+
+          branch_name = os.getenv("GITHUB_HEAD_REF") or os.getenv("GITHUB_REF_NAME") or ""
+          run_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
+
+          payload = {
+              "source": "playwright",
+              "issueKey": os.getenv("JIRA_ISSUE_KEY") or None,
+              "branchName": branch_name or None,
+              "commentOnJira": True,
+              "failureReport": report,
+              "context": f"GitHub Actions failure. Branch: {branch_name}. Run: {run_url}",
+          }
+
+          base_url = os.getenv("QAP_API_BASE_URL", "").rstrip("/")
+          req = urllib.request.Request(
+              f"{base_url}/feedback/analyze-failures",
+              data=json.dumps(payload).encode("utf-8"),
+              headers={
+                  "Content-Type": "application/json",
+                  "X-API-Key": os.getenv("QAP_API_AUTH_TOKEN", ""),
+              },
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  print("QAP failure notification status:", response.status)
+                  print(response.read().decode("utf-8", errors="ignore"))
+          except urllib.error.HTTPError as exc:
+              body = exc.read().decode("utf-8", errors="ignore")
+              print(f"QAP failure notification HTTP error: {exc.code} {body}")
+          except Exception as exc:
+              print(f"QAP failure notification error: {exc}")
+          PY
+
+      - name: Upload Playwright execution traces
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces-${{ github.run_id }}
+          path: |
+            playwright-failure.log
+            playwright-tests/test-results
+            playwright-tests/playwright-report
+          retention-days: 14
