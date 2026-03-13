@@ -78,7 +78,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          bandit -q -r app/src -f sarif -o bandit.sarif
+          bandit -q -r app/src -f json -o bandit-report.json
           BANDIT_EXIT=$?
           pip-audit -r app/requirements.txt -f json -o pip-audit.json
           PIP_AUDIT_EXIT=$?
@@ -92,12 +92,6 @@ jobs:
             exit 1
           fi
 
-      - name: Upload Bandit SARIF to Security tab
-        if: ${{ always() && hashFiles('bandit.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: bandit.sarif
-
       - name: Upload security reports artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -105,7 +99,7 @@ jobs:
           name: security-reports-${{ github.run_id }}
           path: |
             security-test.log
-            bandit.sarif
+            bandit-report.json
             pip-audit.json
           retention-days: 14
 
@@ -119,8 +113,7 @@ jobs:
             echo "- Branch: ${GITHUB_REF_NAME}"
             echo "- Bandit exit code: ${{ steps.security_scan.outputs.bandit_exit }}"
             echo "- pip-audit exit code: ${{ steps.security_scan.outputs.pip_audit_exit }}"
-            echo "- SARIF uploaded to GitHub Security tab."
-            echo "- Full reports uploaded as workflow artifacts."
+            echo "- Reports uploaded as workflow artifacts (bandit-report.json, pip-audit.json)."
           } >> "$GITHUB_STEP_SUMMARY"
 
   playwright:
