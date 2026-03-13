@@ -185,26 +185,44 @@ def list_jobs(
     issue_key: str | None = None,
 ) -> list[dict[str, Any]]:
     db_path = _ensure_db()
-    clauses: list[str] = []
-    params: list[Any] = []
-    if status:
-        clauses.append("status = ?")
-        params.append(status)
-    if issue_key:
-        clauses.append("issue_key = ?")
-        params.append(issue_key)
-
-    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    sql = f"""
-        SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, error
-        FROM jobs
-        {where_sql}
-        ORDER BY created_at DESC
-        LIMIT ?
-    """
-    params.append(limit)
+    params: tuple[Any, ...]
+    if status and issue_key:
+        sql = """
+            SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, error
+            FROM jobs
+            WHERE status = ? AND issue_key = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+        """
+        params = (status, issue_key, limit)
+    elif status:
+        sql = """
+            SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, error
+            FROM jobs
+            WHERE status = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+        """
+        params = (status, limit)
+    elif issue_key:
+        sql = """
+            SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, error
+            FROM jobs
+            WHERE issue_key = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+        """
+        params = (issue_key, limit)
+    else:
+        sql = """
+            SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, error
+            FROM jobs
+            ORDER BY created_at DESC
+            LIMIT ?
+        """
+        params = (limit,)
 
     with _LOCK:
         with sqlite3.connect(db_path) as conn:
-            rows = conn.execute(sql, tuple(params)).fetchall()
+            rows = conn.execute(sql, params).fetchall()
             return [_row_to_job(row) for row in rows]
