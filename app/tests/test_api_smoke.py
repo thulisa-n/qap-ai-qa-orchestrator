@@ -732,6 +732,56 @@ h3. Expected QAP output
     assert items[-1].startswith("Unauthenticated users")
 
 
+def test_extract_acceptance_criteria_handles_markdown_subheadings():
+    from app.src.routers.jira import _extract_acceptance_criteria_items
+
+    payload = """
+Goal
+Validate the end-to-end flow.
+
+Acceptance Criteria
+# Full async QA flow
+* Move ticket to In QA
+* Confirm POST /jira/full-qa-flow-async returns jobId
+
+# Jira comments are posted
+* Verify comments appear for AI Generated Test Scenarios and QAP Governance Gate
+
+Definition of Done
+* Attach screenshots
+""".strip()
+
+    items = _extract_acceptance_criteria_items(payload)
+    assert len(items) >= 3
+    assert any("Move ticket to In QA" in item for item in items)
+    assert any("returns jobId" in item for item in items)
+    assert not any("Definition of Done" in item for item in items)
+
+
+def test_format_tests_for_jira_filters_internal_notes():
+    from app.src.schemas import GenerateTestsResponse
+    from app.src.services.jira_service import format_tests_for_jira
+
+    tests = GenerateTestsResponse.model_validate(
+        {
+            "tags": ["smoke"],
+            "scenarios": [
+                {
+                    "id": "S1",
+                    "title": "Happy path",
+                    "priority": "P1",
+                    "type": "e2e",
+                    "steps": [{"action": "Open app", "data": {}}],
+                }
+            ],
+            "notes": "Placeholder values are for illustration and would be dynamically generated.",
+        }
+    )
+
+    comment = format_tests_for_jira(tests)
+    assert "h3. Notes" not in comment
+
+
 def test_dashboard_metrics_contract(monkeypatch):
     client = _client_with_auth_token()
 

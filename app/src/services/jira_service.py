@@ -28,6 +28,22 @@ def _build_retry_session() -> Session:
 SESSION = _build_retry_session()
 
 
+def _should_publish_note(note: str) -> bool:
+    lowered = (note or "").strip().lower()
+    if not lowered:
+        return False
+    internal_markers = [
+        "placeholder",
+        "for illustration",
+        "would be dynamically",
+        "assumes",
+        "assumption",
+        "tag array at the root",
+        "for this template",
+    ]
+    return not any(marker in lowered for marker in internal_markers)
+
+
 def _to_adf(text: str) -> dict[str, Any]:
     lines = (text or "").splitlines() or [""]
     content = []
@@ -179,7 +195,7 @@ def format_tests_for_jira(tests: GenerateTestsResponse) -> str:
         for index, step in enumerate(scenario.steps, 1):
             lines.append(f"{index}. {step.action}")
 
-    if tests.notes:
+    if tests.notes and _should_publish_note(tests.notes):
         lines.append("\nh3. Notes")
         lines.append(tests.notes)
     return "\n".join(lines)

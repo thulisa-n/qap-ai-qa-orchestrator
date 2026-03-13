@@ -72,8 +72,8 @@ STOPWORDS = {
 
 def _extract_acceptance_criteria_items(raw_text: str) -> list[str]:
     lines = (raw_text or "").splitlines()
-    section_heading_pattern = re.compile(
-        r"^(h[1-6]\.|#{1,6}\s|summary\b|description\b|optional context\b|expected qap output\b|notes\b)",
+    section_boundary_pattern = re.compile(
+        r"^(h[1-6]\.|summary\b|description\b|optional context\b|expected qap output\b|definition of done\b|notes\b)",
         re.IGNORECASE,
     )
 
@@ -90,7 +90,7 @@ def _extract_acceptance_criteria_items(raw_text: str) -> list[str]:
             stripped = line.strip()
             if not stripped:
                 continue
-            if section_heading_pattern.match(stripped):
+            if section_boundary_pattern.match(stripped):
                 break
             candidate_lines.append(stripped)
     else:
@@ -98,11 +98,12 @@ def _extract_acceptance_criteria_items(raw_text: str) -> list[str]:
 
     items: list[str] = []
     for line in candidate_lines:
-        cleaned = re.sub(r"^[\-\*\u2022]\s+", "", line)
+        cleaned = re.sub(r"^#{1,6}\s+", "", line)
+        cleaned = re.sub(r"^[\-\*\u2022]\s+", "", cleaned)
         cleaned = re.sub(r"^\d+[\.\)]\s+", "", cleaned)
         cleaned = cleaned.replace("{{", "").replace("}}", "").replace("`", "")
         # Ignore obvious non-AC instruction lines.
-        if section_heading_pattern.match(cleaned):
+        if section_boundary_pattern.match(cleaned):
             continue
         if len(cleaned) >= 8:
             items.append(cleaned)
