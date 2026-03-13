@@ -216,6 +216,11 @@ def test_jira_full_qa_flow_smoke_contract(monkeypatch):
 
     monkeypatch.setattr("app.src.routers.jira.call_llm", _mock_call_llm)
     monkeypatch.setattr("app.src.routers.jira.jira_add_comment", lambda *args, **kwargs: {"ok": True})
+    label_calls = {"labels": []}
+    monkeypatch.setattr(
+        "app.src.routers.jira.jira_add_labels",
+        lambda issue_key, labels: label_calls["labels"].append((issue_key, labels)) or {"ok": True},
+    )
     monkeypatch.setattr(
         "app.src.routers.jira.write_playwright_files",
         lambda _files: ["/tmp/playwright-tests/tests/auth/login.spec.js"],
@@ -249,6 +254,10 @@ def test_jira_full_qa_flow_smoke_contract(monkeypatch):
     assert payload["validatorDecision"]["isValid"] is True
     assert payload["governanceDecision"]["allowedForAutomation"] is True
     assert payload["automationTask"]["key"] == "QAP-123"
+    assert label_calls["labels"]
+    assert label_calls["labels"][0][0] == "QAP-10"
+    assert "qap-approved" in label_calls["labels"][0][1]
+    assert "qap-automation-complete" in label_calls["labels"][0][1]
 
 
 def test_generate_qa_report_smoke_contract(monkeypatch):
@@ -478,6 +487,11 @@ def test_jira_full_qa_flow_blocks_task_when_governance_fails(monkeypatch):
 
     monkeypatch.setattr("app.src.routers.jira.call_llm", _mock_call_llm)
     monkeypatch.setattr("app.src.routers.jira.jira_add_comment", lambda *args, **kwargs: {"ok": True})
+    label_calls = {"labels": []}
+    monkeypatch.setattr(
+        "app.src.routers.jira.jira_add_labels",
+        lambda issue_key, labels: label_calls["labels"].append((issue_key, labels)) or {"ok": True},
+    )
     monkeypatch.setattr(
         "app.src.routers.jira.write_playwright_files",
         lambda _files: ["/tmp/playwright-tests/tests/auth/login.spec.js"],
@@ -521,6 +535,9 @@ def test_jira_full_qa_flow_blocks_task_when_governance_fails(monkeypatch):
     assert payload["governanceDecision"]["allowedForAutomation"] is False
     assert payload["automationTask"] is None
     assert called["count"] == 0
+    assert label_calls["labels"]
+    assert label_calls["labels"][0][0] == "QAP-13"
+    assert "qap-needs-review" in label_calls["labels"][0][1]
 
 
 def test_jira_full_qa_flow_blocks_task_when_validator_fails(monkeypatch):
@@ -713,3 +730,95 @@ h3. Expected QAP output
     assert len(items) == 3
     assert items[0].startswith("Admin users")
     assert items[-1].startswith("Unauthenticated users")
+
+
+def test_dashboard_metrics_contract(monkeypatch):
+    client = _client_with_auth_token()
+
+    def _mock_list_jobs(*, limit=20, status=None, issue_key=None):
+        if status == "failed":
+            return [
+                {
+                    "jobId": "job-f1",
+                    "issueKey": "QAP-2",
+                    "status": "failed",
+                    "createdAt": "2026-01-01T00:00:00Z",
+                    "startedAt": "2026-01-01T00:00:02Z",
+                    "completedAt": "2026-01-01T00:00:05Z",
+                    "result": None,
+                    "error": "LLM timeout",
+                }
+            ]
+
+        return [
+            {
+                "jobId": "job-s1",
+                "issueKey": "QAP-1",
+                "status": "succeeded",
+                "createdAt": "2026-01-01T00:00:00Z",
+                "startedAt": "2026-01-01T00:00:02Z",
+                "completedAt": "2026-01-01T00:00:10Z",
+                "result": {
+                    "governanceDecision": {"allowedForAutomation": True},
+                    "validatorDecision": {"isValid": True},
+                    "executionTrace": {"taskCreated": True},
+                },
+                "error": None,
+            },
+            {
+                "jobId": "job-f1",
+                "issueKey": "QAP-2",
+                "status": "failed",
+                "createdAt": "2026-01-01T00:00:00Z",
+                "startedAt": "2026-01-01T00:00:02Z",
+                "completedAt": "2026-01-01T00:00:05Z",
+                "result": {
+                    "governanceDecision": {"allowedForAutomation": False},
+                    "validatorDecision": {"isValid": False},
+                    "executionTrace": {"taskCreated": False},
+                },
+                "error": "LLM timeout",
+            },
+            {
+                "jobId": "job-r1",
+                "issueKey": "QAP-3",
+                "status": "running",
+                "createdAt": "2026-01-01T00:01:00Z",
+                "startedAt": "2026-01-01T00:01:02Z",
+                "completedAt": None,
+                "result": None,
+                "error": None,
+            },
+        ]
+
+    monkeypatch.setattr("app.src.routers.dashboard.list_jobs", _mock_list_jobs)
+
+    response = client.get(
+        "/dashboard/metrics?sample_limit=50",
+        headers={"X-API-Key": "smoke-token"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sampleSize"] == 3
+    assert payload["statusCounts"]["succeeded"] == 1
+    assert payload["statusCounts"]["failed"] == 1
+    assert payload["governanceBlockedCount"] == 1
+    assert payload["validatorFailedCount"] == 1
+    assert payload["automationTasksCreatedCount"] == 1
+    assert payload["recentFailedJobs"][0]["jobId"] == "job-f1"
+
+
+def test_dashboard_html_view_contract(monkeypatch):
+    client = _client_with_auth_token()
+    monkeypatch.setattr(
+        "app.src.routers.dashboard.list_jobs",
+        lambda **kwargs: [],
+    )
+
+    response = client.get(
+        "/dashboard",
+        headers={"X-API-Key": "smoke-token"},
+    )
+    assert response.status_code == 200
+    assert "QAP Operations Dashboard" in response.text
+    assert "No failed jobs in sample." in response.text

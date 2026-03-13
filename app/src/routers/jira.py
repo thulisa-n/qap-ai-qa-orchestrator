@@ -31,6 +31,7 @@ from app.src.services.job_service import (
 from app.src.services.jira_service import (
     format_tests_for_jira,
     jira_add_comment,
+    jira_add_labels,
     jira_create_issue,
     jira_link_issues,
 )
@@ -246,6 +247,23 @@ def _format_remediation_report_for_jira(remediation_decision: RemediationDecisio
     return "\n".join(lines)
 
 
+def _derive_outcome_labels(
+    *,
+    validator_decision: ValidatorDecision,
+    governance_decision: dict,
+    task_created: dict | None,
+) -> list[str]:
+    labels: list[str] = []
+    if not validator_decision.isValid or not governance_decision.get("allowedForAutomation", False):
+        labels.append("qap-needs-review")
+    else:
+        labels.append("qap-approved")
+
+    if task_created:
+        labels.append("qap-automation-complete")
+    return labels
+
+
 def _create_issue_with_fallback(
     *,
     summary: str,
@@ -402,6 +420,17 @@ def _run_full_qa_flow(payload: FullQAFlowRequest) -> dict:
                 f"Requested issue type `{payload.automationIssueType}` was not available. "
                 f"Created as `Task` instead.\n\nDetails: {issue_type_warning}",
             )
+
+    labels = _derive_outcome_labels(
+        validator_decision=validator_decision,
+        governance_decision=governance_decision,
+        task_created=task_created,
+    )
+    try:
+        jira_add_labels(payload.issueKey, labels)
+    except Exception as exc:
+        # Labels should enrich workflow state, but must not fail the main QA flow.
+        print(f"[jira/full-qa-flow] label update skipped for {payload.issueKey}: {exc}")
 
     return {
         "status": "ok",

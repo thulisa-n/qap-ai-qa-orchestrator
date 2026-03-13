@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.responses import Response
 
+from app.src.routers.dashboard import router as dashboard_router
 from app.src.routers.generation import router as generation_router
 from app.src.routers.jira import router as jira_router
 
@@ -15,6 +16,7 @@ app = FastAPI(
 
 app.include_router(generation_router)
 app.include_router(jira_router)
+app.include_router(dashboard_router)
 
 
 @app.middleware("http")

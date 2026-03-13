@@ -139,6 +139,36 @@ def jira_link_issues(
     return {"status": "linked"}
 
 
+def jira_add_labels(issue_key: str, labels: list[str]) -> dict[str, Any]:
+    if not labels:
+        return {"status": "no_labels"}
+
+    unique_labels = sorted({label.strip() for label in labels if label and label.strip()})
+    if not unique_labels:
+        return {"status": "no_labels"}
+
+    base, email, token, _ = jira_auth(include_project_key=False)
+    url = f"{base}/rest/api/3/issue/{issue_key}"
+    payload = {
+        "update": {
+            "labels": [{"add": label} for label in unique_labels],
+        }
+    }
+
+    response = SESSION.put(
+        url,
+        json=payload,
+        auth=HTTPBasicAuth(email, token),
+        headers={"Accept": "application/json", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    if response.status_code >= 300:
+        raise RuntimeError(f"Jira label update error {response.status_code}: {response.text}")
+    if response.text.strip():
+        return response.json()
+    return {"status": "labels_updated", "labels": unique_labels}
+
+
 def format_tests_for_jira(tests: GenerateTestsResponse) -> str:
     lines = ["h2. AI Generated Test Scenarios"]
     for scenario in tests.scenarios:
