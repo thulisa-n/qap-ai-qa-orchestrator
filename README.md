@@ -1,6 +1,20 @@
 # QAP AI QA Engine
 AI-driven QA Agent Controller that turns Jira Acceptance Criteria into structured QA outputs with human-in-the-loop governance.
 
+[![CI](https://github.com/thulisa-n/qap-ai-qa-orchestrator/actions/workflows/ci.yml/badge.svg)](https://github.com/thulisa-n/qap-ai-qa-orchestrator/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.13-blue.svg)](app/requirements.txt)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg)](Dockerfile)
+[![Playwright](https://img.shields.io/badge/Playwright-tests-2EAD33.svg)](playwright-tests)
+
+## Quick Links
+- [Quickstart](#quickstart)
+- [Docker Quickstart](#docker-quickstart)
+- [Core Endpoints](#core-endpoints)
+- [Documentation Index](docs/index.md)
+- [Go-live Checklist](docs/go-live-checklist.md)
+- [Demo Video](docs/ai-qa-demo.mov)
+
 ## What Problem This Solves
 QA teams lose time manually translating Jira Acceptance Criteria into test scenarios, deciding automation priority, and creating starter test code. QAP accelerates this flow while keeping final decisions with QA engineers.
 
@@ -143,6 +157,7 @@ Notes:
 - `GET /health`
 
 ## Documentation
+- Docs index: `docs/index.md`
 - Architecture: `docs/architecture.md`
 - Jira automation rules and payload schemas: `docs/jira-automation-rules.md`
 - Runbook and troubleshooting: `docs/runbook-troubleshooting.md`
@@ -154,6 +169,7 @@ Notes:
 - Observability: `docs/observability.md`
 - PoC rollout: `docs/poc-implementation-guide.md`
 - Contribution guide: `CONTRIBUTING.md`
+- Changelog: `CHANGELOG.md`
 
 ## Source-of-Truth Governance (Phase 1)
 - Governance policies are versioned in:
