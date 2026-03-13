@@ -155,6 +155,7 @@ Notes:
 - `GET /jobs/{jobId}` (async QA flow status: `pending|running|succeeded|failed`)
 - `GET /jobs/{jobId}/trace` (execution trace + validator/remediation/governance decisions)
 - `GET /jobs` (list recent jobs, supports `status`, `issueKey`, and `limit` filters)
+- `POST /jobs/cleanup` (retention cleanup by age and optional status filter)
 - `POST /jira/full-qa-flow`
 - `POST /generate-both`
 - `POST /generate-qa-report` (structured QA report template from AC/requirements)
@@ -174,6 +175,7 @@ Notes:
 - Go-live checklist: `docs/go-live-checklist.md`
 - PKI hybrid mode: `docs/pki-hybrid-mode.md`
 - Security: `docs/security-hardening-report.md`
+- Data classification + redaction: `docs/data-classification-and-redaction.md`
 - Governance + certification alignment: `docs/governance-certification-alignment.md`
 - Observability: `docs/observability.md`
 - PoC rollout: `docs/poc-implementation-guide.md`

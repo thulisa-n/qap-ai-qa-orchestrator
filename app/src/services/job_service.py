@@ -1,6 +1,6 @@
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -254,3 +254,31 @@ def list_jobs(
         with sqlite3.connect(db_path) as conn:
             rows = conn.execute(sql, params).fetchall()
             return [_row_to_job(row) for row in rows]
+
+
+def cleanup_jobs(*, older_than_days: int = 30, status: str | None = None) -> dict[str, int]:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=older_than_days)
+    db_path = _ensure_db()
+    with _LOCK:
+        with sqlite3.connect(db_path) as conn:
+            if status:
+                rows = conn.execute(
+                    "SELECT job_id, created_at FROM jobs WHERE status = ?",
+                    (status,),
+                ).fetchall()
+            else:
+                rows = conn.execute("SELECT job_id, created_at FROM jobs").fetchall()
+
+            to_delete: list[str] = []
+            for job_id, created_at in rows:
+                if not created_at:
+                    continue
+                created_dt = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+                if created_dt < cutoff:
+                    to_delete.append(str(job_id))
+
+            if to_delete:
+                conn.executemany("DELETE FROM jobs WHERE job_id = ?", [(job_id,) for job_id in to_delete])
+                conn.commit()
+
+    return {"deleted": len(to_delete), "evaluated": len(rows)}

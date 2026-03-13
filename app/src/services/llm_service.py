@@ -1,6 +1,7 @@
 from google import genai
 from google.genai import types
 
+from app.src.services.redaction_service import redact_sensitive_text
 from app.src.settings import get_settings
 
 
@@ -31,6 +32,10 @@ def _validate_untrusted_input(text: str, label: str) -> None:
             )
 
 
+def _sanitize_untrusted_input(text: str | None) -> str:
+    return redact_sensitive_text(text)
+
+
 def call_llm(prompt: str) -> str:
     settings = get_settings()
     if not settings.gemini_api_key:
@@ -49,6 +54,8 @@ def build_tests_prompt(acceptance_criteria: str, context: str | None) -> str:
     _validate_untrusted_input(acceptance_criteria, "acceptanceCriteria")
     if context:
         _validate_untrusted_input(context, "context")
+    safe_acceptance_criteria = _sanitize_untrusted_input(acceptance_criteria)
+    safe_context = _sanitize_untrusted_input(context)
 
     return f"""
 You are a QA Automation Engineer.
@@ -61,12 +68,12 @@ Also include security-focused scenarios where relevant.
 
 Untrusted Acceptance Criteria:
 <acceptance_criteria>
-{acceptance_criteria}
+{safe_acceptance_criteria}
 </acceptance_criteria>
 
 Optional Untrusted Context:
 <context>
-{context or ""}
+{safe_context}
 </context>
 
 Return JSON schema:
@@ -98,6 +105,8 @@ def build_playwright_prompt(
     _validate_untrusted_input(acceptance_criteria, "acceptanceCriteria")
     if context:
         _validate_untrusted_input(context, "context")
+    safe_acceptance_criteria = _sanitize_untrusted_input(acceptance_criteria)
+    safe_context = _sanitize_untrusted_input(context)
 
     base_url_hint = base_url or "use process.env.BASE_URL"
     return f"""
@@ -137,12 +146,12 @@ Rules:
 
 Untrusted Acceptance Criteria:
 <acceptance_criteria>
-{acceptance_criteria}
+{safe_acceptance_criteria}
 </acceptance_criteria>
 
 Optional Untrusted Context:
 <context>
-{context or ""}
+{safe_context}
 </context>
 """.strip()
 
@@ -155,6 +164,9 @@ def build_automation_decision_prompt(
     _validate_untrusted_input(acceptance_criteria, "acceptanceCriteria")
     if context:
         _validate_untrusted_input(context, "context")
+    safe_acceptance_criteria = _sanitize_untrusted_input(acceptance_criteria)
+    safe_context = _sanitize_untrusted_input(context)
+    safe_tests_json = _sanitize_untrusted_input(tests_json)
 
     return f"""
 You are a Principal QA Architect deciding if automation implementation work should be created now.
@@ -169,17 +181,17 @@ Decision criteria:
 
 Untrusted Acceptance Criteria:
 <acceptance_criteria>
-{acceptance_criteria}
+{safe_acceptance_criteria}
 </acceptance_criteria>
 
 Optional Untrusted Context:
 <context>
-{context or ""}
+{safe_context}
 </context>
 
 Generated scenarios (JSON):
 <tests_json>
-{tests_json}
+{safe_tests_json}
 </tests_json>
 
 Return JSON schema:
@@ -204,6 +216,8 @@ def build_qa_report_prompt(acceptance_criteria: str, context: str | None) -> str
     _validate_untrusted_input(acceptance_criteria, "acceptanceCriteria")
     if context:
         _validate_untrusted_input(context, "context")
+    safe_acceptance_criteria = _sanitize_untrusted_input(acceptance_criteria)
+    safe_context = _sanitize_untrusted_input(context)
 
     return f"""
 You are a Senior QA Reporting Analyst.
@@ -218,12 +232,12 @@ Do not fabricate precise benchmark numbers.
 
 Untrusted Acceptance Criteria:
 <acceptance_criteria>
-{acceptance_criteria}
+{safe_acceptance_criteria}
 </acceptance_criteria>
 
 Optional Untrusted Context:
 <context>
-{context or ""}
+{safe_context}
 </context>
 
 Return JSON schema:
@@ -275,6 +289,10 @@ def build_artifact_critic_prompt(
     _validate_untrusted_input(acceptance_criteria, "acceptanceCriteria")
     if context:
         _validate_untrusted_input(context, "context")
+    safe_acceptance_criteria = _sanitize_untrusted_input(acceptance_criteria)
+    safe_context = _sanitize_untrusted_input(context)
+    safe_tests_json = _sanitize_untrusted_input(tests_json)
+    safe_playwright_json = _sanitize_untrusted_input(playwright_json)
 
     return f"""
 You are a QA Critic Agent that validates generated test scenarios and Playwright artifacts before automation implementation.
@@ -289,22 +307,22 @@ Evaluation goals:
 
 Untrusted Acceptance Criteria:
 <acceptance_criteria>
-{acceptance_criteria}
+{safe_acceptance_criteria}
 </acceptance_criteria>
 
 Optional Untrusted Context:
 <context>
-{context or ""}
+{safe_context}
 </context>
 
 Generated scenarios (JSON):
 <tests_json>
-{tests_json}
+{safe_tests_json}
 </tests_json>
 
 Generated Playwright (JSON):
 <playwright_json>
-{playwright_json}
+{safe_playwright_json}
 </playwright_json>
 
 Return JSON schema:
@@ -334,6 +352,8 @@ def build_feedback_analysis_prompt(
     _validate_untrusted_input(failure_report, "failureReport")
     if context:
         _validate_untrusted_input(context, "context")
+    safe_failure_report = _sanitize_untrusted_input(failure_report)
+    safe_context = _sanitize_untrusted_input(context)
 
     return f"""
 You are a Closed-Loop QA Feedback Agent.
@@ -348,7 +368,7 @@ Task:
 
 Untrusted Failure Report:
 <failure_report>
-{failure_report}
+{safe_failure_report}
 </failure_report>
 
 Source:
@@ -358,7 +378,7 @@ Source:
 
 Optional Untrusted Context:
 <context>
-{context or ""}
+{safe_context}
 </context>
 
 Return JSON schema:

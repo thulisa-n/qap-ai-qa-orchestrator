@@ -25,6 +25,7 @@ Use this page as the entry point for operating, extending, and presenting QAP.
 ## Security and governance
 
 - `docs/security-hardening-report.md` - controls, tests, CI scan policy, and residual risk.
+- `docs/data-classification-and-redaction.md` - data handling, redaction policy, and retention guidance.
 - `docs/governance-certification-alignment.md` - strict governance rules and certification mapping.
 
 ## Suggested read sequence (for hiring managers)

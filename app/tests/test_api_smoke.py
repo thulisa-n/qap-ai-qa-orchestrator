@@ -768,6 +768,33 @@ def test_list_async_jobs_supports_filters(monkeypatch):
     assert all(job["issueKey"] == "QAP-31" for job in filtered_payload["jobs"])
 
 
+def test_cleanup_jobs_endpoint_contract(monkeypatch):
+    from app.src.services.job_service import create_job
+
+    client = _client_with_auth_token()
+    create_job(
+        job_id="job-cleanup-1",
+        issue_key="QAP-200",
+        request_payload={"issueKey": "QAP-200", "acceptanceCriteria": "Given x then y"},
+    )
+    create_job(
+        job_id="job-cleanup-2",
+        issue_key="QAP-201",
+        request_payload={"issueKey": "QAP-201", "acceptanceCriteria": "Given x then z"},
+    )
+
+    response = client.post(
+        "/jobs/cleanup?olderThanDays=3650&status=failed",
+        headers={"X-API-Key": "smoke-token"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["retention"]["olderThanDays"] == 3650
+    assert "deleted" in payload
+    assert "evaluated" in payload
+
+
 def test_create_issue_falls_back_from_subtask_to_task(monkeypatch):
     from app.src.routers.jira import _create_issue_with_fallback
 

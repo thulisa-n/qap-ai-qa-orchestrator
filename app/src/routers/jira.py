@@ -22,6 +22,7 @@ from app.src.schemas import (
 )
 from app.src.services.file_service import write_playwright_files
 from app.src.services.job_service import (
+    cleanup_jobs,
     create_job,
     get_job,
     get_job_trace,
@@ -829,6 +830,20 @@ def proceed_anyway_async_job(
         "jobId": job_id,
         "issueKey": issue_key,
         "automationTask": created,
+    }
+
+
+@router.post("/jobs/cleanup", operation_id="cleanup_async_jobs")
+def cleanup_async_jobs(
+    older_than_days: int = Query(default=30, ge=1, le=3650, alias="olderThanDays"),
+    status: str | None = Query(default=None, pattern="^(pending|running|succeeded|failed)$"),
+    _: None = Depends(require_api_key),
+) -> dict:
+    result = cleanup_jobs(older_than_days=older_than_days, status=status)
+    return {
+        "status": "ok",
+        "retention": {"olderThanDays": older_than_days, "status": status},
+        **result,
     }
 
 

@@ -7,6 +7,7 @@ from requests.auth import HTTPBasicAuth
 from urllib3.util import Retry
 
 from app.src.schemas import GenerateTestsResponse
+from app.src.services.redaction_service import sanitize_external_text
 from app.src.settings import get_settings
 
 
@@ -82,10 +83,11 @@ def jira_auth(include_project_key: bool = False) -> tuple[str, str, str, str | N
 def jira_add_comment(issue_key: str, comment: str) -> dict[str, Any]:
     base, email, token, _ = jira_auth(include_project_key=False)
     url = f"{base}/rest/api/3/issue/{issue_key}/comment"
+    safe_comment = sanitize_external_text(comment)
 
     response = SESSION.post(
         url,
-        json={"body": _to_adf(comment)},
+        json={"body": _to_adf(safe_comment)},
         auth=HTTPBasicAuth(email, token),
         headers={"Accept": "application/json", "Content-Type": "application/json"},
         timeout=30,
@@ -104,12 +106,14 @@ def jira_create_issue(
 ) -> dict[str, Any]:
     base, email, token, project_key = jira_auth(include_project_key=True)
     url = f"{base}/rest/api/3/issue"
+    safe_summary = sanitize_external_text(summary, max_chars=250)
+    safe_description = sanitize_external_text(description)
 
     fields: dict[str, Any] = {
         "project": {"key": project_key},
-        "summary": summary,
+        "summary": safe_summary,
         "issuetype": {"name": issue_type},
-        "description": _to_adf(description),
+        "description": _to_adf(safe_description),
     }
 
     if issue_type.lower() in {"sub-task", "subtask"} and parent_key:

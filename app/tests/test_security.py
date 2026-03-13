@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 
 from app.src.app import app
 from app.src.schemas import FileItem
+from app.src.services.llm_service import build_tests_prompt
+from app.src.services.redaction_service import sanitize_external_text
 from app.src.settings import get_settings
 
 
@@ -126,3 +128,23 @@ def test_fileitem_rejects_path_traversal():
 def test_fileitem_accepts_safe_playwright_spec_path():
     model = FileItem(path="tests/auth/login.spec.js", content="test('ok', ()=>{})")
     assert model.path == "tests/auth/login.spec.js"
+
+
+def test_llm_prompt_redacts_sensitive_markers():
+    prompt = build_tests_prompt(
+        "Contact me at thulie1@gmail.com and use API_KEY=AIzaSyA5T0LcQQDPOOPPatvXhGdpw1tUU_hw9Y4",
+        "Token: ATATT3xFfGF009x3n1r1L4QO9sV_9QI-r0OjWZf5JZm1F_5m11_h8Yj8K-VHrOJQ8Yn7g9NQ",
+    )
+    assert "[REDACTED_EMAIL]" in prompt
+    assert "[REDACTED_SECRET]" in prompt
+    assert "AIzaSyA5T0LcQQDPOOPPatvXhGdpw1tUU_hw9Y4" not in prompt
+    assert "ATATT3xFfGF009x3n1r1L4QO9sV_9QI-r0OjWZf5JZm1F_5m11_h8Yj8K-VHrOJQ8Yn7g9NQ" not in prompt
+
+
+def test_external_text_sanitizer_redacts_secret_assignments():
+    text = "password=SuperSecret123 token=abc123 email user@example.com"
+    sanitized = sanitize_external_text(text)
+    assert "SuperSecret123" not in sanitized
+    assert "abc123" not in sanitized
+    assert "user@example.com" not in sanitized
+    assert "[REDACTED_SECRET]" in sanitized

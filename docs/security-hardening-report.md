@@ -84,6 +84,27 @@ Security value:
 Security value:
 - Prevents silent regressions in key controls during future development.
 
+### 9) Data redaction before LLM + outbound Jira sanitization
+- Added centralized redaction service for sensitive markers:
+  - email addresses
+  - Gemini/Atlassian token-like strings
+  - inline secret assignments (`token=`, `password=`, `api_key=`)
+- LLM prompt builders now sanitize untrusted text before embedding into prompts.
+- Jira comment/task creation now sanitizes outbound text to reduce accidental leakage.
+
+Security value:
+- Reduces data bleed risk to LLM providers and ticketing systems.
+- Enforces defensive output handling even when upstream input contains sensitive values.
+
+### 10) Job retention cleanup endpoint
+- Added controlled cleanup operation:
+  - `POST /jobs/cleanup?olderThanDays=<N>&status=<optional>`
+- Supports retention hygiene without manual DB operations.
+
+Security value:
+- Limits long-term sensitive trace retention.
+- Helps align data minimization with enterprise governance expectations.
+
 ## How to answer "How do we prevent info bleed?"
 
 For enterprise/security questionnaires, describe controls in three layers:
