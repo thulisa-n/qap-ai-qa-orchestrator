@@ -132,13 +132,13 @@ def test_fileitem_accepts_safe_playwright_spec_path():
 
 def test_llm_prompt_redacts_sensitive_markers():
     prompt = build_tests_prompt(
-        "Contact me at thulie1@gmail.com and use API_KEY=AIzaSyA5T0LcQQDPOOPPatvXhGdpw1tUU_hw9Y4",
-        "Token: ATATT3xFfGF009x3n1r1L4QO9sV_9QI-r0OjWZf5JZm1F_5m11_h8Yj8K-VHrOJQ8Yn7g9NQ",
+        "Contact me at thulie1@gmail.com and use API_KEY=GEMINI_TEST_KEY_ABC123",
+        "Token: ATLASSIAN_TEST_TOKEN_ABC123",
     )
     assert "[REDACTED_EMAIL]" in prompt
     assert "[REDACTED_SECRET]" in prompt
-    assert "AIzaSyA5T0LcQQDPOOPPatvXhGdpw1tUU_hw9Y4" not in prompt
-    assert "ATATT3xFfGF009x3n1r1L4QO9sV_9QI-r0OjWZf5JZm1F_5m11_h8Yj8K-VHrOJQ8Yn7g9NQ" not in prompt
+    assert "GEMINI_TEST_KEY_ABC123" not in prompt
+    assert "ATLASSIAN_TEST_TOKEN_ABC123" not in prompt
 
 
 def test_external_text_sanitizer_redacts_secret_assignments():
