@@ -184,9 +184,11 @@ def get_job_trace(job_id: str) -> dict[str, Any] | None:
         "issueKey": job["issueKey"],
         "status": job["status"],
         "executionTrace": result.get("executionTrace"),
+        "criticDecision": result.get("criticDecision"),
         "validatorDecision": result.get("validatorDecision"),
         "remediationDecision": result.get("remediationDecision"),
         "governanceDecision": result.get("governanceDecision"),
+        "decisionExplanation": result.get("decisionExplanation"),
         "error": job.get("error"),
     }
 

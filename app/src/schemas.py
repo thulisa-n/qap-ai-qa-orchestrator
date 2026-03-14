@@ -112,6 +112,11 @@ class FullQAFlowRequest(BaseModel):
     automationSummaryPrefix: str = "Automation: Implement generated Playwright tests"
 
 
+class ProceedAnywayRequest(BaseModel):
+    approvedBy: str | None = Field(default=None, min_length=2, max_length=120)
+    reason: str | None = Field(default=None, min_length=5, max_length=1000)
+
+
 class Step(BaseModel):
     action: str
     data: dict[str, Any] = Field(default_factory=dict)

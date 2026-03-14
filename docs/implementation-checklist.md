@@ -18,7 +18,7 @@ Use this as the working execution plan for daily progress.
   - `enhance_prompt_quality`, `decompose_and_rebuild`, `add_consistency_constraints`.
 - [ ] Add attempt-state object into execution trace:
   - attempt number, strategy, before/after critic scores, outcome.
-- [ ] Add explicit override/audit fields to trace:
+- [x] Add explicit override/audit fields to trace:
   - `manualOverride`, `approvedBy`, `approvedAt`, `reason`.
 - [ ] Add one Jira escalation template for unfixable failures.
 

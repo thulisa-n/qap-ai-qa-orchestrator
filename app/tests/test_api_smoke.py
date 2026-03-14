@@ -253,6 +253,8 @@ def test_jira_full_qa_flow_smoke_contract(monkeypatch):
     assert payload["criticDecision"]["isAcceptable"] is True
     assert payload["validatorDecision"]["isValid"] is True
     assert payload["governanceDecision"]["allowedForAutomation"] is True
+    assert "decisionExplanation" in payload
+    assert payload["decisionExplanation"]["blocked"] is False
     assert payload["automationTask"]["key"] == "QAP-123"
     assert label_calls["labels"]
     assert label_calls["labels"][0][0] == "QAP-10"
@@ -721,11 +723,54 @@ def test_proceed_anyway_creates_manual_override_task(monkeypatch):
     response = client.post(
         "/jobs/job-override-1/proceed-anyway",
         headers={"X-API-Key": "smoke-token"},
+        json={"approvedBy": "qa.lead", "reason": "High-value regression path needed for release"},
     )
     assert response.status_code == 200
     payload = response.json()
     assert payload["mode"] == "proceed_anyway"
     assert payload["automationTask"]["key"] == "QAP-900"
+    assert payload["overrideAudit"]["approvedBy"] == "qa.lead"
+    assert payload["overrideAudit"]["reason"].startswith("High-value")
+    assert payload["overrideAudit"]["approvedAt"]
+
+    job_response = client.get(
+        "/jobs/job-override-1",
+        headers={"X-API-Key": "smoke-token"},
+    )
+    assert job_response.status_code == 200
+    job_payload = job_response.json()
+    assert job_payload["result"]["manualOverride"]["approvedBy"] == "qa.lead"
+
+
+def test_explain_decision_endpoint_returns_trace_summary(monkeypatch):
+    client = _client_with_auth_token()
+    monkeypatch.setattr(
+        "app.src.routers.jira._run_full_qa_flow_background",
+        lambda _payload_data, _job_id: None,
+    )
+
+    create_response = client.post(
+        "/jira/full-qa-flow-async",
+        headers={"X-API-Key": "smoke-token"},
+        json={
+            "issueKey": "QAP-300",
+            "acceptanceCriteria": "Given role checks, when API is called, then authorization is enforced.",
+            "commentOnJira": False,
+            "writePlaywrightFiles": False,
+            "createAutomationTask": False,
+        },
+    )
+    assert create_response.status_code == 200
+    job_id = create_response.json()["jobId"]
+
+    explain_response = client.get(
+        f"/jobs/{job_id}/explain-decision",
+        headers={"X-API-Key": "smoke-token"},
+    )
+    assert explain_response.status_code == 200
+    payload = explain_response.json()
+    assert payload["jobId"] == job_id
+    assert "decisionExplanation" in payload
 
 
 def test_list_async_jobs_supports_filters(monkeypatch):

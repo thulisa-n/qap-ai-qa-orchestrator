@@ -1,9 +1,11 @@
 import re
+from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
+from app.src.agents.decision_explainer_agent import build_decision_explanation
 from app.src.agents.critic_agent import run_artifact_critic
 from app.src.agents.remediation_agent import plan_remediation
 from app.src.agents.validator_agent import validate_agent_outputs
@@ -17,6 +19,7 @@ from app.src.schemas import (
     GenerateTestsResponse,
     JiraAutomationTaskRequest,
     JiraCommentRequest,
+    ProceedAnywayRequest,
     RemediationDecision,
     ValidatorDecision,
 )
@@ -509,6 +512,12 @@ def _run_full_qa_flow(payload: FullQAFlowRequest) -> dict:
         "validatorDecision": validator_decision.model_dump(),
         "remediationDecision": remediation_decision.model_dump(),
         "governanceDecision": governance_decision,
+        "decisionExplanation": build_decision_explanation(
+            critic_decision=critic_decision.model_dump(),
+            validator_decision=validator_decision.model_dump(),
+            governance_decision=governance_decision,
+            automation_decision=automation_decision.model_dump(),
+        ),
         "coverageReport": coverage_report,
         "jiraComment": jira_comment,
         "tests": tests.model_dump(),
@@ -702,6 +711,29 @@ def get_async_job_trace(
     return trace
 
 
+@router.get("/jobs/{job_id}/explain-decision", operation_id="explain_async_job_decision")
+def explain_async_job_decision(
+    job_id: str,
+    _: None = Depends(require_api_key),
+) -> dict:
+    trace = get_job_trace(job_id)
+    if not trace:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    explanation = trace.get("decisionExplanation") or build_decision_explanation(
+        critic_decision=(trace.get("criticDecision") or {}),
+        validator_decision=(trace.get("validatorDecision") or {}),
+        governance_decision=(trace.get("governanceDecision") or {}),
+        automation_decision={},
+    )
+    return {
+        "jobId": trace["jobId"],
+        "issueKey": trace["issueKey"],
+        "status": trace["status"],
+        "decisionExplanation": explanation,
+    }
+
+
 @router.post("/jobs/{job_id}/retry", operation_id="retry_async_job")
 def retry_async_job(
     job_id: str,
@@ -754,6 +786,7 @@ def retry_async_job(
 @router.post("/jobs/{job_id}/proceed-anyway", operation_id="proceed_anyway_async_job")
 def proceed_anyway_async_job(
     job_id: str,
+    payload: ProceedAnywayRequest | None = None,
     _: None = Depends(require_api_key),
 ) -> dict:
     job = get_job(job_id)
@@ -816,12 +849,21 @@ def proceed_anyway_async_job(
         (
             "h3. QAP Manual Override\n"
             f"Proceed-anyway approved for job `{job_id}`.\n"
-            f"Created automation task: `{created.get('key', 'unknown')}`."
+            f"Created automation task: `{created.get('key', 'unknown')}`.\n"
+            f"*Approved by:* {payload.approvedBy if payload and payload.approvedBy else 'unknown'}\n"
+            f"*Reason:* {payload.reason if payload and payload.reason else 'No reason provided'}"
         ),
     )
 
+    approved_at = datetime.now(timezone.utc).isoformat()
     result["automationTask"] = created
-    result["manualOverride"] = {"proceedAnyway": True, "sourceJobId": job_id}
+    result["manualOverride"] = {
+        "proceedAnyway": True,
+        "sourceJobId": job_id,
+        "approvedBy": payload.approvedBy if payload and payload.approvedBy else "unknown",
+        "approvedAt": approved_at,
+        "reason": payload.reason if payload and payload.reason else "No reason provided",
+    }
     update_job_result(job_id, result)
 
     return {
@@ -830,6 +872,7 @@ def proceed_anyway_async_job(
         "jobId": job_id,
         "issueKey": issue_key,
         "automationTask": created,
+        "overrideAudit": result["manualOverride"],
     }
 
 

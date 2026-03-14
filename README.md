@@ -154,6 +154,7 @@ Notes:
 - `POST /jira/full-qa-flow-async` (recommended webhook target)
 - `GET /jobs/{jobId}` (async QA flow status: `pending|running|succeeded|failed`)
 - `GET /jobs/{jobId}/trace` (execution trace + validator/remediation/governance decisions)
+- `GET /jobs/{jobId}/explain-decision` (human-readable reason for allow/block decisions)
 - `GET /jobs` (list recent jobs, supports `status`, `issueKey`, and `limit` filters)
 - `POST /jobs/cleanup` (retention cleanup by age and optional status filter)
 - `POST /jira/full-qa-flow`
@@ -163,6 +164,17 @@ Notes:
 - `POST /pki/validate-profile` (hybrid PKI policy-as-code profile validation demo)
 - `GET /pki/discover` (hybrid domain adapter: `demo|real_pki`)
 - `GET /health`
+
+## Job Trace Example
+`GET /jobs/{jobId}/trace`
+
+- Scenario generation -> success
+- Playwright generation -> success
+- Critic evaluation -> pass/needs_revision (with score)
+- Validator -> pass/blocked
+- Remediation -> none/heal/escalate
+- Governance gate -> allowed/denied
+- Decision explanation -> why automation was allowed or denied
 
 ## Documentation
 - Docs index: `docs/index.md`
