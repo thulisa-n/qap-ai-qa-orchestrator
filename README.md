@@ -228,9 +228,27 @@ Create a detailed PR summary from this branch: include context/problem, goals, a
 ```
 
 ## Future Roadmap
-- Agentic orchestration loop (`reason -> tool -> observe -> adjust`) on top of the current controller
-- Human feedback loop from Jira comments to refine scenarios and decisions
-- Closed-Loop Feedback Agent: analyze failed test reports, classify flake vs environment vs regression, and suggest fixes or new regression cases
-- Automated bug triage with AI-generated Jira bug summaries from failures
-- Playwright quality critic pass for flaky selector and brittle assertion detection
-- Optional framework adapters (Cypress/Selenium) without changing core agent logic
+
+### Recently completed
+- Dedicated `Critic Agent` module in `app/src/agents/critic_agent.py`.
+- Validator + remediation gates with explicit decision reporting in Jira comments and API response.
+- Self-healing v1 controls:
+  - one controlled heal retry,
+  - `POST /jobs/{jobId}/retry`,
+  - `POST /jobs/{jobId}/proceed-anyway`,
+  - retry metadata in execution trace.
+- Operations dashboard endpoints:
+  - `GET /dashboard`
+  - `GET /dashboard/metrics`
+- Data safety hardening:
+  - LLM input redaction + Jira output sanitization
+  - retention cleanup endpoint `POST /jobs/cleanup`
+  - data-classification documentation.
+
+### Next milestones
+- Multi-attempt self-healing loop (up to 3 attempts) with strategy-specific regeneration.
+- Healing session model and history API (`/healing/sessions`) with per-attempt analytics.
+- Human override audit enrichment (`approvedBy`, `approvedAt`, `reason`) and stricter governance policy checks.
+- GitHub Pages metrics badges for healing rate, escalation rate, and average attempts.
+- Automated bug triage issue creation from closed-loop failure analysis.
+- Optional framework adapters (Cypress/Selenium) without changing core governance/agent contracts.
