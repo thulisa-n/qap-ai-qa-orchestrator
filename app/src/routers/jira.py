@@ -248,9 +248,35 @@ def _format_remediation_report_for_jira(remediation_decision: RemediationDecisio
         f"*Action:* {remediation_decision.action}",
         f"*Status:* {remediation_decision.status}",
     ]
+    if remediation_decision.failureCategory:
+        lines.append(f"*Failure category:* {remediation_decision.failureCategory}")
+    if remediation_decision.healStrategy:
+        lines.append(f"*Heal strategy:* {remediation_decision.healStrategy}")
     if remediation_decision.notes:
         lines.append("*Notes:*")
         lines.extend([f"- {item}" for item in remediation_decision.notes])
+    return "\n".join(lines)
+
+
+def _format_unfixable_escalation_for_jira(
+    *,
+    validator_decision: ValidatorDecision,
+    remediation_decision: RemediationDecision,
+) -> str:
+    lines = [
+        "h3. QAP Escalation Required",
+        f"*Category:* {remediation_decision.failureCategory or 'unclassified'}",
+        "*Reason:* Automated healing did not proceed for this failure profile.",
+        "",
+        "h4. Recommended human actions",
+        "- Review validator and critic findings in trace output.",
+        "- Resolve governance/policy ambiguities before re-triggering QA flow.",
+        "- Use `/jobs/{jobId}/retry` after fixes, or `/jobs/{jobId}/proceed-anyway` with explicit approval.",
+    ]
+    if validator_decision.findings:
+        lines.append("")
+        lines.append("h4. Blocking findings")
+        lines.extend([f"- {item}" for item in validator_decision.findings[:5]])
     return "\n".join(lines)
 
 
@@ -306,6 +332,7 @@ def _run_generation_and_gates(
     payload: FullQAFlowRequest,
     *,
     context_override: str | None = None,
+    attempt_number: int = 1,
 ) -> dict[str, Any]:
     effective_context = context_override if context_override is not None else payload.context
 
@@ -341,7 +368,11 @@ def _run_generation_and_gates(
         critic=critic_decision,
         automation=automation_decision,
     )
-    remediation_decision = plan_remediation(validator_decision)
+    remediation_decision = plan_remediation(
+        validator_decision,
+        critic_decision,
+        attempt_number=attempt_number,
+    )
     governance_decision = evaluate_governance_gate(
         coverage_report=coverage_report,
         tests=tests,
@@ -362,7 +393,7 @@ def _run_generation_and_gates(
 
 
 def _run_full_qa_flow(payload: FullQAFlowRequest) -> dict:
-    pass_one = _run_generation_and_gates(payload)
+    pass_one = _run_generation_and_gates(payload, attempt_number=1)
     tests = pass_one["tests"]
     coverage_report = pass_one["coverage_report"]
     playwright = pass_one["playwright"]
@@ -372,18 +403,41 @@ def _run_full_qa_flow(payload: FullQAFlowRequest) -> dict:
     remediation_decision = pass_one["remediation_decision"]
     governance_decision = pass_one["governance_decision"]
 
+    attempt_states: list[dict[str, Any]] = [
+        {
+            "attemptNumber": 1,
+            "strategy": "initial_generation",
+            "scoreBefore": None,
+            "scoreAfter": critic_decision.overallScore,
+            "outcome": (
+                "passed"
+                if validator_decision.isValid and governance_decision["allowedForAutomation"]
+                else "heal_requested"
+                if remediation_decision.action == "heal"
+                else "escalated"
+                if remediation_decision.action == "escalate"
+                else "blocked"
+            ),
+        }
+    ]
+
     retry_count = 0
     retry_reason: str | None = None
     if not validator_decision.isValid and remediation_decision.action == "heal":
         retry_count = 1
         retry_reason = "validator_needs_fix"
+        previous_score = critic_decision.overallScore
         heal_context = (payload.context or "") + (
             "\n\n[HEAL_RETRY]\n"
             "Regenerate artifacts and resolve validator findings with stricter fidelity to AC.\n"
             f"Findings: {'; '.join(validator_decision.findings)}\n"
             f"Suggested fixes: {'; '.join(validator_decision.suggestedFixes)}"
         )
-        pass_two = _run_generation_and_gates(payload, context_override=heal_context)
+        pass_two = _run_generation_and_gates(
+            payload,
+            context_override=heal_context,
+            attempt_number=2,
+        )
         tests = pass_two["tests"]
         coverage_report = pass_two["coverage_report"]
         playwright = pass_two["playwright"]
@@ -392,6 +446,22 @@ def _run_full_qa_flow(payload: FullQAFlowRequest) -> dict:
         validator_decision = pass_two["validator_decision"]
         remediation_decision = pass_two["remediation_decision"]
         governance_decision = pass_two["governance_decision"]
+        attempt_states.append(
+            {
+                "attemptNumber": 2,
+                "strategy": "heal_retry",
+                "healStrategy": remediation_decision.healStrategy or "enhance_prompt_quality",
+                "scoreBefore": previous_score,
+                "scoreAfter": critic_decision.overallScore,
+                "outcome": (
+                    "passed"
+                    if validator_decision.isValid and governance_decision["allowedForAutomation"]
+                    else "escalated"
+                    if remediation_decision.action == "escalate"
+                    else "blocked"
+                ),
+            }
+        )
 
     jira_comment = None
     if payload.commentOnJira:
@@ -421,6 +491,18 @@ def _run_full_qa_flow(payload: FullQAFlowRequest) -> dict:
                 payload.issueKey,
                 _format_remediation_report_for_jira(remediation_decision),
             )
+            if (
+                remediation_decision.action == "escalate"
+                and remediation_decision.failureCategory
+                and remediation_decision.failureCategory.startswith("unfixable_")
+            ):
+                jira_add_comment(
+                    payload.issueKey,
+                    _format_unfixable_escalation_for_jira(
+                        validator_decision=validator_decision,
+                        remediation_decision=remediation_decision,
+                    ),
+                )
         jira_add_comment(payload.issueKey, _format_governance_report_for_jira(governance_decision))
 
     files_written = None
@@ -506,6 +588,10 @@ def _run_full_qa_flow(payload: FullQAFlowRequest) -> dict:
             "retryAttempted": retry_count > 0,
             "retryCount": retry_count,
             "retryReason": retry_reason,
+            "attemptState": {
+                "attempts": attempt_states,
+                "finalOutcome": attempt_states[-1]["outcome"] if attempt_states else "unknown",
+            },
         },
         "automationDecision": automation_decision.model_dump(),
         "criticDecision": critic_decision.model_dump(),

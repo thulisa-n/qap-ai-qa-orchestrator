@@ -12,15 +12,15 @@ Use this as the working execution plan for daily progress.
 
 ## Week 1 - Core healing hardening
 
-- [ ] Implement enriched remediation classification in `remediation_agent`:
+- [x] Implement enriched remediation classification in `remediation_agent`:
   - `fixable_quality`, `fixable_completeness`, `fixable_consistency`, `unfixable_policy`, `unfixable_complexity`.
-- [ ] Add heal strategy selection in remediation output:
+- [x] Add heal strategy selection in remediation output:
   - `enhance_prompt_quality`, `decompose_and_rebuild`, `add_consistency_constraints`.
-- [ ] Add attempt-state object into execution trace:
+- [x] Add attempt-state object into execution trace:
   - attempt number, strategy, before/after critic scores, outcome.
 - [x] Add explicit override/audit fields to trace:
   - `manualOverride`, `approvedBy`, `approvedAt`, `reason`.
-- [ ] Add one Jira escalation template for unfixable failures.
+- [x] Add one Jira escalation template for unfixable failures.
 
 ## Week 2 - Regeneration strategies
 

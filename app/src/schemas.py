@@ -232,6 +232,14 @@ class ValidatorDecision(BaseModel):
 class RemediationDecision(BaseModel):
     action: str = Field(pattern="^(none|retry|heal|escalate)$")
     status: str = Field(pattern="^(not_needed|succeeded|failed|escalated)$")
+    failureCategory: str | None = Field(
+        default=None,
+        pattern="^(fixable_quality|fixable_completeness|fixable_consistency|unfixable_policy|unfixable_complexity)$",
+    )
+    healStrategy: str | None = Field(
+        default=None,
+        pattern="^(enhance_prompt_quality|decompose_and_rebuild|add_consistency_constraints|none)$",
+    )
     notes: list[str] = Field(default_factory=list, max_length=15)
 
 

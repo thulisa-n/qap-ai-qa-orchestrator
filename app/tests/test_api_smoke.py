@@ -252,9 +252,14 @@ def test_jira_full_qa_flow_smoke_contract(monkeypatch):
     assert payload["automationDecision"]["shouldCreateAutomationTask"] is True
     assert payload["criticDecision"]["isAcceptable"] is True
     assert payload["validatorDecision"]["isValid"] is True
+    assert payload["remediationDecision"]["action"] == "none"
     assert payload["governanceDecision"]["allowedForAutomation"] is True
     assert "decisionExplanation" in payload
     assert payload["decisionExplanation"]["blocked"] is False
+    attempt_state = payload["executionTrace"]["attemptState"]
+    assert attempt_state["finalOutcome"] == "passed"
+    assert attempt_state["attempts"][0]["attemptNumber"] == 1
+    assert attempt_state["attempts"][0]["strategy"] == "initial_generation"
     assert payload["automationTask"]["key"] == "QAP-123"
     assert label_calls["labels"]
     assert label_calls["labels"][0][0] == "QAP-10"
@@ -590,7 +595,26 @@ def test_jira_full_qa_flow_blocks_task_when_validator_fails(monkeypatch):
     payload = response.json()
     assert payload["automationDecision"]["shouldCreateAutomationTask"] is True
     assert payload["validatorDecision"]["isValid"] is False
-    assert payload["remediationDecision"]["action"] in {"heal", "escalate"}
+    assert payload["remediationDecision"]["action"] == "escalate"
+    assert payload["remediationDecision"]["failureCategory"] in {
+        "fixable_quality",
+        "fixable_completeness",
+        "fixable_consistency",
+        "unfixable_policy",
+        "unfixable_complexity",
+    }
+    assert payload["remediationDecision"]["healStrategy"] in {
+        "enhance_prompt_quality",
+        "decompose_and_rebuild",
+        "add_consistency_constraints",
+        "none",
+    }
+    attempt_state = payload["executionTrace"]["attemptState"]
+    assert attempt_state["finalOutcome"] in {"blocked", "escalated"}
+    assert len(attempt_state["attempts"]) >= 2
+    assert attempt_state["attempts"][0]["attemptNumber"] == 1
+    assert attempt_state["attempts"][1]["attemptNumber"] == 2
+    assert attempt_state["attempts"][1]["scoreBefore"] is not None
     assert payload["automationTask"] is None
     assert called["count"] == 0
 
