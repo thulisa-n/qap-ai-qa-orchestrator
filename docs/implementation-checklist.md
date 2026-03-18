@@ -24,13 +24,13 @@ Use this as the working execution plan for daily progress.
 
 ## Week 2 - Regeneration strategies
 
-- [ ] Implement `RegeneratorAgent` module:
+- [x] Implement `RegeneratorAgent` module:
   - build fix plan from critic/validator findings,
   - apply strategy-specific prompt augmentation.
-- [ ] Implement strategy 1: `enhance_prompt_quality`.
-- [ ] Implement strategy 2: `decompose_and_rebuild` (for completeness failures).
-- [ ] Implement strategy 3: `add_consistency_constraints`.
-- [ ] Enforce max attempts (`<= 3`) and deterministic escalate behavior.
+- [x] Implement strategy 1: `enhance_prompt_quality`.
+- [x] Implement strategy 2: `decompose_and_rebuild` (for completeness failures).
+- [x] Implement strategy 3: `add_consistency_constraints`.
+- [x] Enforce max attempts (`<= 3`) and deterministic escalate behavior.
 
 ## Week 3 - Visibility and platform polish
 

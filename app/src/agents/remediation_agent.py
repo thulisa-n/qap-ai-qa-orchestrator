@@ -67,7 +67,7 @@ def plan_remediation(
     critic_decision: ArtifactCriticDecision,
     *,
     attempt_number: int = 1,
-    max_attempts: int = 2,
+    max_attempts: int = 3,
 ) -> RemediationDecision:
     if validator_decision.isValid:
         return RemediationDecision(action="none", status="not_needed", notes=[])

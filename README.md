@@ -258,6 +258,7 @@ Create a detailed PR summary from this branch: include context/problem, goals, a
   - data-classification documentation.
 
 ### Next milestones
+Updated priorities for the next implementation cycle:
 - Multi-attempt self-healing loop (up to 3 attempts) with strategy-specific regeneration.
 - Healing session model and history API (`/healing/sessions`) with per-attempt analytics.
 - Human override audit enrichment (`approvedBy`, `approvedAt`, `reason`) and stricter governance policy checks.

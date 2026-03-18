@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
 from app.src.agents.decision_explainer_agent import build_decision_explanation
 from app.src.agents.critic_agent import run_artifact_critic
+from app.src.agents.regenerator_agent import build_regeneration_context
 from app.src.agents.remediation_agent import plan_remediation
 from app.src.agents.validator_agent import validate_agent_outputs
 from app.src.governance.engine import evaluate_governance_gate
@@ -52,6 +53,7 @@ from app.src.security import require_api_key
 
 
 router = APIRouter()
+MAX_HEAL_ATTEMPTS = 3
 
 
 STOPWORDS = {
@@ -333,6 +335,7 @@ def _run_generation_and_gates(
     *,
     context_override: str | None = None,
     attempt_number: int = 1,
+    max_heal_attempts: int = MAX_HEAL_ATTEMPTS,
 ) -> dict[str, Any]:
     effective_context = context_override if context_override is not None else payload.context
 
@@ -372,6 +375,7 @@ def _run_generation_and_gates(
         validator_decision,
         critic_decision,
         attempt_number=attempt_number,
+        max_attempts=max_heal_attempts,
     )
     governance_decision = evaluate_governance_gate(
         coverage_report=coverage_report,
@@ -393,7 +397,11 @@ def _run_generation_and_gates(
 
 
 def _run_full_qa_flow(payload: FullQAFlowRequest) -> dict:
-    pass_one = _run_generation_and_gates(payload, attempt_number=1)
+    pass_one = _run_generation_and_gates(
+        payload,
+        attempt_number=1,
+        max_heal_attempts=MAX_HEAL_ATTEMPTS,
+    )
     tests = pass_one["tests"]
     coverage_report = pass_one["coverage_report"]
     playwright = pass_one["playwright"]
@@ -403,65 +411,82 @@ def _run_full_qa_flow(payload: FullQAFlowRequest) -> dict:
     remediation_decision = pass_one["remediation_decision"]
     governance_decision = pass_one["governance_decision"]
 
+    def _attempt_outcome() -> str:
+        if validator_decision.isValid and governance_decision["allowedForAutomation"]:
+            return "passed"
+        if remediation_decision.action == "heal":
+            return "heal_requested"
+        if remediation_decision.action == "escalate":
+            return "escalated"
+        return "blocked"
+
     attempt_states: list[dict[str, Any]] = [
         {
             "attemptNumber": 1,
             "strategy": "initial_generation",
             "scoreBefore": None,
             "scoreAfter": critic_decision.overallScore,
-            "outcome": (
-                "passed"
-                if validator_decision.isValid and governance_decision["allowedForAutomation"]
-                else "heal_requested"
-                if remediation_decision.action == "heal"
-                else "escalated"
-                if remediation_decision.action == "escalate"
-                else "blocked"
-            ),
+            "outcome": _attempt_outcome(),
         }
     ]
 
     retry_count = 0
     retry_reason: str | None = None
-    if not validator_decision.isValid and remediation_decision.action == "heal":
-        retry_count = 1
+    retry_fix_plans: list[dict[str, Any]] = []
+    attempt_number = 1
+    while (
+        attempt_number < MAX_HEAL_ATTEMPTS
+        and not validator_decision.isValid
+        and remediation_decision.action == "heal"
+    ):
+        retry_count += 1
         retry_reason = "validator_needs_fix"
         previous_score = critic_decision.overallScore
-        heal_context = (payload.context or "") + (
-            "\n\n[HEAL_RETRY]\n"
-            "Regenerate artifacts and resolve validator findings with stricter fidelity to AC.\n"
-            f"Findings: {'; '.join(validator_decision.findings)}\n"
-            f"Suggested fixes: {'; '.join(validator_decision.suggestedFixes)}"
+        next_attempt_number = attempt_number + 1
+        heal_context, fix_plan = build_regeneration_context(
+            base_context=payload.context,
+            validator_decision=validator_decision,
+            critic_decision=critic_decision,
+            remediation_decision=remediation_decision,
         )
-        pass_two = _run_generation_and_gates(
+        retry_fix_plan = {
+            "attemptNumber": next_attempt_number,
+            "strategy": fix_plan.strategy,
+            "diagnosis": fix_plan.diagnosis,
+            "promptEnhancements": fix_plan.prompt_enhancements,
+            "constraints": fix_plan.constraints,
+        }
+        retry_fix_plans.append(retry_fix_plan)
+
+        retried_pass = _run_generation_and_gates(
             payload,
             context_override=heal_context,
-            attempt_number=2,
+            attempt_number=next_attempt_number,
+            max_heal_attempts=MAX_HEAL_ATTEMPTS,
         )
-        tests = pass_two["tests"]
-        coverage_report = pass_two["coverage_report"]
-        playwright = pass_two["playwright"]
-        critic_decision = pass_two["critic_decision"]
-        automation_decision = pass_two["automation_decision"]
-        validator_decision = pass_two["validator_decision"]
-        remediation_decision = pass_two["remediation_decision"]
-        governance_decision = pass_two["governance_decision"]
+        tests = retried_pass["tests"]
+        coverage_report = retried_pass["coverage_report"]
+        playwright = retried_pass["playwright"]
+        critic_decision = retried_pass["critic_decision"]
+        automation_decision = retried_pass["automation_decision"]
+        validator_decision = retried_pass["validator_decision"]
+        remediation_decision = retried_pass["remediation_decision"]
+        governance_decision = retried_pass["governance_decision"]
+        attempt_number = next_attempt_number
+
         attempt_states.append(
             {
-                "attemptNumber": 2,
+                "attemptNumber": attempt_number,
                 "strategy": "heal_retry",
-                "healStrategy": remediation_decision.healStrategy or "enhance_prompt_quality",
+                "healStrategy": retry_fix_plan["strategy"],
                 "scoreBefore": previous_score,
                 "scoreAfter": critic_decision.overallScore,
-                "outcome": (
-                    "passed"
-                    if validator_decision.isValid and governance_decision["allowedForAutomation"]
-                    else "escalated"
-                    if remediation_decision.action == "escalate"
-                    else "blocked"
-                ),
+                "outcome": _attempt_outcome(),
             }
         )
+
+    if retry_count > 0 and remediation_decision.action == "escalate" and attempt_number >= MAX_HEAL_ATTEMPTS:
+        retry_reason = "max_attempts_reached"
 
     jira_comment = None
     if payload.commentOnJira:
@@ -592,6 +617,9 @@ def _run_full_qa_flow(payload: FullQAFlowRequest) -> dict:
                 "attempts": attempt_states,
                 "finalOutcome": attempt_states[-1]["outcome"] if attempt_states else "unknown",
             },
+            "retryFixPlan": retry_fix_plans[-1] if retry_fix_plans else None,
+            "retryFixPlans": retry_fix_plans,
+            "maxHealAttempts": MAX_HEAL_ATTEMPTS,
         },
         "automationDecision": automation_decision.model_dump(),
         "criticDecision": critic_decision.model_dump(),

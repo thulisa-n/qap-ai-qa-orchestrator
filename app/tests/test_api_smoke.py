@@ -551,10 +551,17 @@ def test_jira_full_qa_flow_blocks_task_when_validator_fails(monkeypatch):
     client = _client_with_auth_token()
     responses = iter(
         [
+            # Attempt 1
             VALID_TESTS_JSON,
             VALID_PLAYWRIGHT_JSON,
             VALID_ARTIFACT_CRITIC_NEEDS_FIX_JSON,
             VALID_AUTOMATION_DECISION_YES_JSON,
+            # Attempt 2
+            VALID_TESTS_JSON,
+            VALID_PLAYWRIGHT_JSON,
+            VALID_ARTIFACT_CRITIC_NEEDS_FIX_JSON,
+            VALID_AUTOMATION_DECISION_YES_JSON,
+            # Attempt 3 (max attempts -> escalate)
             VALID_TESTS_JSON,
             VALID_PLAYWRIGHT_JSON,
             VALID_ARTIFACT_CRITIC_NEEDS_FIX_JSON,
@@ -615,8 +622,72 @@ def test_jira_full_qa_flow_blocks_task_when_validator_fails(monkeypatch):
     assert attempt_state["attempts"][0]["attemptNumber"] == 1
     assert attempt_state["attempts"][1]["attemptNumber"] == 2
     assert attempt_state["attempts"][1]["scoreBefore"] is not None
+    assert payload["executionTrace"]["retryFixPlan"]["strategy"] in {
+        "enhance_prompt_quality",
+        "decompose_and_rebuild",
+        "add_consistency_constraints",
+    }
+    assert payload["executionTrace"]["retryCount"] >= 1
     assert payload["automationTask"] is None
     assert called["count"] == 0
+
+
+def test_jira_full_qa_flow_escalates_after_max_heal_attempts(monkeypatch):
+    client = _client_with_auth_token()
+    responses = iter(
+        [
+            # Attempt 1
+            VALID_TESTS_JSON,
+            VALID_PLAYWRIGHT_JSON,
+            VALID_ARTIFACT_CRITIC_NEEDS_FIX_JSON,
+            VALID_AUTOMATION_DECISION_YES_JSON,
+            # Attempt 2
+            VALID_TESTS_JSON,
+            VALID_PLAYWRIGHT_JSON,
+            VALID_ARTIFACT_CRITIC_NEEDS_FIX_JSON,
+            VALID_AUTOMATION_DECISION_YES_JSON,
+            # Attempt 3
+            VALID_TESTS_JSON,
+            VALID_PLAYWRIGHT_JSON,
+            VALID_ARTIFACT_CRITIC_NEEDS_FIX_JSON,
+            VALID_AUTOMATION_DECISION_YES_JSON,
+        ]
+    )
+
+    def _mock_call_llm(_prompt: str) -> str:
+        return next(responses)
+
+    monkeypatch.setattr("app.src.routers.jira.call_llm", _mock_call_llm)
+    monkeypatch.setattr("app.src.routers.jira.jira_add_comment", lambda *args, **kwargs: {"ok": True})
+    monkeypatch.setattr("app.src.routers.jira.jira_add_labels", lambda *args, **kwargs: {"ok": True})
+    monkeypatch.setattr(
+        "app.src.routers.jira.write_playwright_files",
+        lambda _files: ["/tmp/playwright-tests/tests/auth/login.spec.js"],
+    )
+    monkeypatch.setattr("app.src.routers.jira.jira_create_issue", lambda **kwargs: {"key": "QAP-777"})
+
+    response = client.post(
+        "/jira/full-qa-flow",
+        headers={"X-API-Key": "smoke-token"},
+        json={
+            "issueKey": "QAP-15",
+            "acceptanceCriteria": "Given strict security gates, when artifacts fail validation repeatedly, then flow should stop after max retries and escalate.",
+            "commentOnJira": True,
+            "writePlaywrightFiles": True,
+            "createAutomationTask": True,
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["validatorDecision"]["isValid"] is False
+    assert payload["remediationDecision"]["action"] == "escalate"
+    assert payload["executionTrace"]["retryAttempted"] is True
+    assert payload["executionTrace"]["retryCount"] == 2
+    assert payload["executionTrace"]["retryReason"] == "max_attempts_reached"
+    assert payload["executionTrace"]["maxHealAttempts"] == 3
+    assert len(payload["executionTrace"]["attemptState"]["attempts"]) == 3
+    assert payload["executionTrace"]["attemptState"]["attempts"][-1]["attemptNumber"] == 3
+    assert payload["automationTask"] is None
 
 
 def test_jira_full_qa_flow_async_accepts_request(monkeypatch):
