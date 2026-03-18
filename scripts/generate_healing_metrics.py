@@ -64,31 +64,53 @@ def _rate_color(rate: float, *, higher_is_better: bool = True) -> str:
 def generate_metrics(*, db_path: Path, output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     runs = _load_job_results(db_path)
-    total_runs = len(runs)
-    healed_runs = sum(
-        1
-        for item in runs
-        if item["finalOutcome"] == "passed" and item["retryCount"] > 0
-    )
-    escalated_runs = sum(1 for item in runs if item["finalOutcome"] == "escalated")
-    avg_attempts = round(
-        (sum(item["attempts"] for item in runs) / total_runs), 2
-    ) if total_runs else 0.0
+    existing_dashboard: dict[str, Any] = {}
+    dashboard_path = output_dir / "dashboard-data.json"
+    if dashboard_path.exists():
+        try:
+            existing_dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            existing_dashboard = {}
 
-    healing_rate = _safe_rate(healed_runs, total_runs)
-    escalation_rate = _safe_rate(escalated_runs, total_runs)
-    dashboard_data = {
-        "lastUpdate": datetime.now(timezone.utc).isoformat(),
-        "totalRuns": total_runs,
-        "healedRuns": healed_runs,
-        "escalatedRuns": escalated_runs,
-        "healingRate": healing_rate,
-        "escalationRate": escalation_rate,
-        "averageAttempts": avg_attempts,
-        "recentRuns": runs[:20],
-    }
+    # In CI runners we often have no runtime DB data; keep existing published metrics
+    # instead of resetting badges to 0 on every push.
+    if not runs and existing_dashboard.get("totalRuns", 0) > 0:
+        total_runs = int(existing_dashboard.get("totalRuns", 0))
+        healed_runs = int(existing_dashboard.get("healedRuns", 0))
+        escalated_runs = int(existing_dashboard.get("escalatedRuns", 0))
+        healing_rate = float(existing_dashboard.get("healingRate", 0.0))
+        escalation_rate = float(existing_dashboard.get("escalationRate", 0.0))
+        avg_attempts = float(existing_dashboard.get("averageAttempts", 0.0))
+        dashboard_data = {
+            **existing_dashboard,
+            "lastUpdate": datetime.now(timezone.utc).isoformat(),
+        }
+    else:
+        total_runs = len(runs)
+        healed_runs = sum(
+            1
+            for item in runs
+            if item["finalOutcome"] == "passed" and item["retryCount"] > 0
+        )
+        escalated_runs = sum(1 for item in runs if item["finalOutcome"] == "escalated")
+        avg_attempts = round(
+            (sum(item["attempts"] for item in runs) / total_runs), 2
+        ) if total_runs else 0.0
 
-    (output_dir / "dashboard-data.json").write_text(
+        healing_rate = _safe_rate(healed_runs, total_runs)
+        escalation_rate = _safe_rate(escalated_runs, total_runs)
+        dashboard_data = {
+            "lastUpdate": datetime.now(timezone.utc).isoformat(),
+            "totalRuns": total_runs,
+            "healedRuns": healed_runs,
+            "escalatedRuns": escalated_runs,
+            "healingRate": healing_rate,
+            "escalationRate": escalation_rate,
+            "averageAttempts": avg_attempts,
+            "recentRuns": runs[:20],
+        }
+
+    dashboard_path.write_text(
         json.dumps(dashboard_data, indent=2),
         encoding="utf-8",
     )

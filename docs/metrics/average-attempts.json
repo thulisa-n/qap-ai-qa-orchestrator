@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
   "label": "average attempts",
-  "message": "0.0",
-  "color": "brightgreen"
+  "message": "2.0",
+  "color": "yellow"
 }
