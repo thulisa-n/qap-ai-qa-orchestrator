@@ -39,6 +39,9 @@ jobs:
           set -o pipefail
           PYTHONPATH=. python -m pytest app/tests -q 2>&1 | tee backend-test.log
 
+      - name: Generate healing metrics artifacts
+        run: python scripts/generate_healing_metrics.py --db-path app/.data/jobs.db --output-dir docs/metrics
+
       - name: Upload backend execution traces
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -46,6 +49,7 @@ jobs:
           name: backend-traces-${{ github.run_id }}
           path: |
             backend-test.log
+            docs/metrics/*.json
           retention-days: 14
 
   security-scans:

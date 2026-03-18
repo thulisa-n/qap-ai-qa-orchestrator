@@ -6,6 +6,9 @@ AI-driven QA Agent Controller that turns Jira Acceptance Criteria into structure
 [![Python](https://img.shields.io/badge/Python-3.13-blue.svg)](app/requirements.txt)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg)](Dockerfile)
 [![Playwright](https://img.shields.io/badge/Playwright-tests-2EAD33.svg)](playwright-tests)
+[![Healing Rate](https://img.shields.io/endpoint?url=https://thulisa-n.github.io/qap-ai-qa-orchestrator/metrics/healing-rate.json)](https://thulisa-n.github.io/qap-ai-qa-orchestrator/metrics/healing-rate.json)
+[![Escalation Rate](https://img.shields.io/endpoint?url=https://thulisa-n.github.io/qap-ai-qa-orchestrator/metrics/escalation-rate.json)](https://thulisa-n.github.io/qap-ai-qa-orchestrator/metrics/escalation-rate.json)
+[![Average Attempts](https://img.shields.io/endpoint?url=https://thulisa-n.github.io/qap-ai-qa-orchestrator/metrics/average-attempts.json)](https://thulisa-n.github.io/qap-ai-qa-orchestrator/metrics/average-attempts.json)
 
 ## Quick Links
 - [Quickstart](#quickstart)
@@ -155,6 +158,7 @@ Notes:
 - `GET /jobs/{jobId}` (async QA flow status: `pending|running|succeeded|failed`)
 - `GET /jobs/{jobId}/trace` (execution trace + validator/remediation/governance decisions)
 - `GET /jobs/{jobId}/explain-decision` (human-readable reason for allow/block decisions)
+- `GET /healing/sessions` (per-attempt healing history with `issueKey`, `status`, `strategy`, `limit` filters)
 - `GET /jobs` (list recent jobs, supports `status`, `issueKey`, and `limit` filters)
 - `POST /jobs/cleanup` (retention cleanup by age and optional status filter)
 - `POST /jira/full-qa-flow`
@@ -241,27 +245,8 @@ Create a detailed PR summary from this branch: include context/problem, goals, a
 
 ## Future Roadmap
 
-### Recently completed
-- Dedicated `Critic Agent` module in `app/src/agents/critic_agent.py`.
-- Validator + remediation gates with explicit decision reporting in Jira comments and API response.
-- Self-healing v1 controls:
-  - one controlled heal retry,
-  - `POST /jobs/{jobId}/retry`,
-  - `POST /jobs/{jobId}/proceed-anyway`,
-  - retry metadata in execution trace.
-- Operations dashboard endpoints:
-  - `GET /dashboard`
-  - `GET /dashboard/metrics`
-- Data safety hardening:
-  - LLM input redaction + Jira output sanitization
-  - retention cleanup endpoint `POST /jobs/cleanup`
-  - data-classification documentation.
+Current delivery progress is tracked in `docs/implementation-checklist.md`.
 
-### Next milestones
-Updated priorities for the next implementation cycle:
-- Multi-attempt self-healing loop (up to 3 attempts) with strategy-specific regeneration.
-- Healing session model and history API (`/healing/sessions`) with per-attempt analytics.
-- Human override audit enrichment (`approvedBy`, `approvedAt`, `reason`) and stricter governance policy checks.
-- GitHub Pages metrics badges for healing rate, escalation rate, and average attempts.
+### Next milestones (pending)
 - Automated bug triage issue creation from closed-loop failure analysis.
 - Optional framework adapters (Cypress/Selenium) without changing core governance/agent contracts.

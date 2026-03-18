@@ -1124,3 +1124,33 @@ def test_dashboard_html_view_contract(monkeypatch):
     assert response.status_code == 200
     assert "QAP Operations Dashboard" in response.text
     assert "No failed jobs in sample." in response.text
+
+
+def test_healing_sessions_endpoint_contract(monkeypatch):
+    client = _client_with_auth_token()
+    monkeypatch.setattr(
+        "app.src.routers.jira.list_healing_sessions",
+        lambda **kwargs: [
+            {
+                "sessionId": "job-1:attempt:2",
+                "jobId": "job-1",
+                "issueKey": "QAP-1",
+                "attempt": 2,
+                "strategy": "enhance_prompt_quality",
+                "status": "passed",
+                "scoreBefore": 0.4,
+                "scoreAfter": 0.82,
+                "createdAt": "2026-01-01T00:00:00Z",
+            }
+        ],
+    )
+
+    response = client.get(
+        "/healing/sessions?issueKey=QAP-1&status=passed&strategy=enhance_prompt_quality&limit=10",
+        headers={"X-API-Key": "smoke-token"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 1
+    assert payload["sessions"][0]["jobId"] == "job-1"
+    assert payload["filters"]["issueKey"] == "QAP-1"

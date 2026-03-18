@@ -34,13 +34,13 @@ Use this as the working execution plan for daily progress.
 
 ## Week 3 - Visibility and platform polish
 
-- [ ] Add healing session persistence model:
+- [x] Add healing session persistence model:
   - `session_id`, `job_id`, `attempt`, `strategy`, `status`, `score_before`, `score_after`, timestamps.
-- [ ] Add API endpoint for healing sessions:
+- [x] Add API endpoint for healing sessions:
   - `GET /healing/sessions`
   - optional filters: `issueKey`, `status`, `strategy`, `limit`.
-- [ ] Add GitHub Pages metrics output (`docs/metrics/*.json`) from CI runs.
-- [ ] Add README badges for healing KPIs (success rate, escalation rate, average attempts).
+- [x] Add GitHub Pages metrics output (`docs/metrics/*.json`) from CI runs.
+- [x] Add README badges for healing KPIs (success rate, escalation rate, average attempts).
 - [ ] Add one dashboard section for healing trends (last 20 sessions).
 
 ## Optional "wow factor"

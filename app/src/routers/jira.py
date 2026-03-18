@@ -30,10 +30,12 @@ from app.src.services.job_service import (
     create_job,
     get_job,
     get_job_trace,
+    list_healing_sessions,
     list_jobs,
     mark_job_failed,
     mark_job_running,
     mark_job_succeeded,
+    upsert_healing_sessions,
     update_job_result,
 )
 from app.src.services.jira_service import (
@@ -770,6 +772,12 @@ def _run_full_qa_flow_background(payload_data: dict, job_id: str) -> None:
         payload = FullQAFlowRequest.model_validate(payload_data)
         result = _run_full_qa_flow(payload)
         mark_job_succeeded(job_id, result)
+        attempt_state = ((result.get("executionTrace") or {}).get("attemptState") or {}).get("attempts") or []
+        upsert_healing_sessions(
+            job_id=job_id,
+            issue_key=payload.issueKey,
+            attempts=attempt_state,
+        )
     except Exception as exc:
         issue_key = payload_data.get("issueKey", "unknown-issue")
         mark_job_failed(job_id, str(exc))
@@ -1017,4 +1025,32 @@ def list_async_jobs(
         "limit": limit,
         "filters": {"status": status, "issueKey": issue_key},
         "jobs": jobs,
+    }
+
+
+@router.get("/healing/sessions", operation_id="list_healing_sessions")
+def list_healing_sessions_endpoint(
+    limit: int = Query(default=50, ge=1, le=500),
+    issue_key: str | None = Query(default=None, alias="issueKey"),
+    status: str | None = Query(
+        default=None,
+        pattern="^(passed|blocked|escalated|heal_requested|unknown)$",
+    ),
+    strategy: str | None = Query(
+        default=None,
+        pattern="^(initial_generation|enhance_prompt_quality|decompose_and_rebuild|add_consistency_constraints|unknown)$",
+    ),
+    _: None = Depends(require_api_key),
+) -> dict:
+    sessions = list_healing_sessions(
+        limit=limit,
+        issue_key=issue_key,
+        status=status,
+        strategy=strategy,
+    )
+    return {
+        "count": len(sessions),
+        "limit": limit,
+        "filters": {"issueKey": issue_key, "status": status, "strategy": strategy},
+        "sessions": sessions,
     }

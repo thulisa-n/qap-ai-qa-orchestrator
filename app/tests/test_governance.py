@@ -101,3 +101,50 @@ def test_governance_blocks_automation_when_coverage_is_low_and_security_missing(
     )
     assert report["allowedForAutomation"] is False
     assert len(report["violations"]) >= 2
+
+
+def test_governance_blocks_when_confidence_is_below_policy_minimum():
+    tests = GenerateTestsResponse.model_validate(
+        {
+            "tags": ["security"],
+            "scenarios": [
+                {
+                    "id": "S1",
+                    "title": "Security access validation",
+                    "priority": "P1",
+                    "type": "api",
+                    "steps": [{"action": "Verify forbidden access for non-admin token", "data": {}}],
+                }
+            ],
+            "notes": "ok",
+        }
+    )
+    decision = AutomationDecision.model_validate(
+        {
+            "shouldCreateAutomationTask": True,
+            "confidence": 0.61,
+            "reason": "Automation should happen.",
+            "recommendedCoverage": "partial_automation",
+            "automationRisk": "low",
+            "riskReasons": ["API is deterministic."],
+        }
+    )
+    critic = ArtifactCriticDecision.model_validate(
+        {
+            "overallScore": 0.82,
+            "scenarioQualityScore": 0.84,
+            "playwrightQualityScore": 0.8,
+            "isAcceptable": True,
+            "findings": [],
+            "recommendations": [],
+            "verdict": "pass",
+        }
+    )
+    report = evaluate_governance_gate(
+        coverage_report={"score": 0.92},
+        tests=tests,
+        automation_decision=decision,
+        critic_decision=critic,
+    )
+    assert report["allowedForAutomation"] is False
+    assert any("confidence" in violation.lower() for violation in report["violations"])

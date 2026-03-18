@@ -75,6 +75,9 @@ def evaluate_governance_gate(
     require_human_at = str(overrides.get("requireHumanApprovalAtRisk", "high"))
     require_critic = bool(overrides.get("requireCriticAcceptableForAutomation", True))
     min_critic_score = float(overrides.get("minCriticOverallScoreForAutomation", 0.7))
+    min_confidence = float(overrides.get("minAutomationDecisionConfidence", 0.0))
+    require_risk_reasons_at_or_above = str(overrides.get("requireRiskReasonsAtOrAbove", "high"))
+    require_reason_text = bool(overrides.get("blockAutomationWhenDecisionReasonMissing", True))
 
     coverage_ratio = float(coverage_report.get("score", 0.0))
     has_security = _has_security_scenario(tests)
@@ -90,6 +93,20 @@ def evaluate_governance_gate(
         violations.append(
             f"Automation risk `{automation_decision.automationRisk}` exceeds allowed threshold `{max_allowed_risk}`."
         )
+    if automation_decision.confidence < min_confidence:
+        violations.append(
+            f"Automation decision confidence {automation_decision.confidence:.2f} is below required minimum {min_confidence:.2f}."
+        )
+    if (
+        RISK_ORDER.get(automation_decision.automationRisk, 2)
+        >= RISK_ORDER.get(require_risk_reasons_at_or_above, 2)
+        and not automation_decision.riskReasons
+    ):
+        violations.append(
+            "Risk reasons are required for medium/high-risk automation decisions."
+        )
+    if require_reason_text and not automation_decision.reason.strip():
+        violations.append("Automation decision reason is required by organization policy.")
     if critic_decision and critic_decision.overallScore < min_critic_score:
         violations.append(
             f"Critic overall score {critic_decision.overallScore:.2f} is below required minimum {min_critic_score:.2f}."

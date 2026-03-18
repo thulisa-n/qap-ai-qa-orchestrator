@@ -5,6 +5,9 @@
     "minCoverageRatioForAutomation": 0.75,
     "requireSecurityScenarioForAutomation": true,
     "maxAllowedAutomationRisk": "medium",
+    "minAutomationDecisionConfidence": 0.8,
+    "requireRiskReasonsAtOrAbove": "medium",
+    "blockAutomationWhenDecisionReasonMissing": true,
     "requireHumanApprovalAtRisk": "high",
     "requireCriticAcceptableForAutomation": true,
     "minCriticOverallScoreForAutomation": 0.7

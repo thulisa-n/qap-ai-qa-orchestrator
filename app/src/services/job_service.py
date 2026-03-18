@@ -38,6 +38,21 @@ def _ensure_db() -> Path:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS healing_sessions (
+                session_id TEXT PRIMARY KEY,
+                job_id TEXT NOT NULL,
+                issue_key TEXT NOT NULL,
+                attempt INTEGER NOT NULL,
+                strategy TEXT NOT NULL,
+                status TEXT NOT NULL,
+                score_before REAL,
+                score_after REAL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
         columns = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
         if "request_json" not in columns:
             conn.execute("ALTER TABLE jobs ADD COLUMN request_json TEXT")
@@ -281,6 +296,171 @@ def cleanup_jobs(*, older_than_days: int = 30, status: str | None = None) -> dic
 
             if to_delete:
                 conn.executemany("DELETE FROM jobs WHERE job_id = ?", [(job_id,) for job_id in to_delete])
+                conn.executemany(
+                    "DELETE FROM healing_sessions WHERE job_id = ?",
+                    [(job_id,) for job_id in to_delete],
+                )
                 conn.commit()
 
     return {"deleted": len(to_delete), "evaluated": len(rows)}
+
+
+def upsert_healing_sessions(
+    *,
+    job_id: str,
+    issue_key: str,
+    attempts: list[dict[str, Any]],
+) -> None:
+    if not attempts:
+        return
+
+    db_path = _ensure_db()
+    now_iso = _utc_now_iso()
+    rows: list[tuple[Any, ...]] = []
+    for attempt in attempts:
+        attempt_number = int(attempt.get("attemptNumber") or 0)
+        if attempt_number <= 0:
+            continue
+        strategy = str(attempt.get("healStrategy") or attempt.get("strategy") or "unknown")
+        status = str(attempt.get("outcome") or "unknown")
+        rows.append(
+            (
+                f"{job_id}:attempt:{attempt_number}",
+                job_id,
+                issue_key,
+                attempt_number,
+                strategy,
+                status,
+                attempt.get("scoreBefore"),
+                attempt.get("scoreAfter"),
+                now_iso,
+            )
+        )
+
+    if not rows:
+        return
+
+    with _LOCK:
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("DELETE FROM healing_sessions WHERE job_id = ?", (job_id,))
+            conn.executemany(
+                """
+                INSERT OR REPLACE INTO healing_sessions (
+                    session_id, job_id, issue_key, attempt, strategy, status, score_before, score_after, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
+            conn.commit()
+
+
+def list_healing_sessions(
+    *,
+    limit: int = 20,
+    issue_key: str | None = None,
+    status: str | None = None,
+    strategy: str | None = None,
+) -> list[dict[str, Any]]:
+    db_path = _ensure_db()
+    params: tuple[Any, ...]
+    if issue_key and status and strategy:
+        sql = """
+            SELECT session_id, job_id, issue_key, attempt, strategy, status, score_before, score_after, created_at
+            FROM healing_sessions
+            WHERE issue_key = ? AND status = ? AND strategy = ?
+            ORDER BY created_at DESC, attempt DESC
+            LIMIT ?
+        """
+        params = (issue_key, status, strategy, limit)
+    elif issue_key and status:
+        sql = """
+            SELECT session_id, job_id, issue_key, attempt, strategy, status, score_before, score_after, created_at
+            FROM healing_sessions
+            WHERE issue_key = ? AND status = ?
+            ORDER BY created_at DESC, attempt DESC
+            LIMIT ?
+        """
+        params = (issue_key, status, limit)
+    elif issue_key and strategy:
+        sql = """
+            SELECT session_id, job_id, issue_key, attempt, strategy, status, score_before, score_after, created_at
+            FROM healing_sessions
+            WHERE issue_key = ? AND strategy = ?
+            ORDER BY created_at DESC, attempt DESC
+            LIMIT ?
+        """
+        params = (issue_key, strategy, limit)
+    elif status and strategy:
+        sql = """
+            SELECT session_id, job_id, issue_key, attempt, strategy, status, score_before, score_after, created_at
+            FROM healing_sessions
+            WHERE status = ? AND strategy = ?
+            ORDER BY created_at DESC, attempt DESC
+            LIMIT ?
+        """
+        params = (status, strategy, limit)
+    elif issue_key:
+        sql = """
+            SELECT session_id, job_id, issue_key, attempt, strategy, status, score_before, score_after, created_at
+            FROM healing_sessions
+            WHERE issue_key = ?
+            ORDER BY created_at DESC, attempt DESC
+            LIMIT ?
+        """
+        params = (issue_key, limit)
+    elif status:
+        sql = """
+            SELECT session_id, job_id, issue_key, attempt, strategy, status, score_before, score_after, created_at
+            FROM healing_sessions
+            WHERE status = ?
+            ORDER BY created_at DESC, attempt DESC
+            LIMIT ?
+        """
+        params = (status, limit)
+    elif strategy:
+        sql = """
+            SELECT session_id, job_id, issue_key, attempt, strategy, status, score_before, score_after, created_at
+            FROM healing_sessions
+            WHERE strategy = ?
+            ORDER BY created_at DESC, attempt DESC
+            LIMIT ?
+        """
+        params = (strategy, limit)
+    else:
+        sql = """
+            SELECT session_id, job_id, issue_key, attempt, strategy, status, score_before, score_after, created_at
+            FROM healing_sessions
+            ORDER BY created_at DESC, attempt DESC
+            LIMIT ?
+        """
+        params = (limit,)
+    with _LOCK:
+        with sqlite3.connect(db_path) as conn:
+            rows = conn.execute(sql, params).fetchall()
+            sessions: list[dict[str, Any]] = []
+            for row in rows:
+                (
+                    session_id,
+                    row_job_id,
+                    row_issue_key,
+                    attempt,
+                    row_strategy,
+                    row_status,
+                    score_before,
+                    score_after,
+                    created_at,
+                ) = row
+                sessions.append(
+                    {
+                        "sessionId": session_id,
+                        "jobId": row_job_id,
+                        "issueKey": row_issue_key,
+                        "attempt": attempt,
+                        "strategy": row_strategy,
+                        "status": row_status,
+                        "scoreBefore": score_before,
+                        "scoreAfter": score_after,
+                        "createdAt": created_at,
+                    }
+                )
+            return sessions
