@@ -1,10 +1,56 @@
 {
-  "lastUpdate": "2026-03-18T05:07:15.063172+00:00",
-  "totalRuns": 0,
-  "healedRuns": 0,
-  "escalatedRuns": 0,
-  "healingRate": 0.0,
-  "escalationRate": 0.0,
-  "averageAttempts": 0.0,
-  "recentRuns": []
+  "lastUpdate": "2026-03-18T05:14:38.007864+00:00",
+  "totalRuns": 5,
+  "healedRuns": 2,
+  "escalatedRuns": 1,
+  "healingRate": 0.4,
+  "escalationRate": 0.2,
+  "averageAttempts": 2.0,
+  "recentRuns": [
+    {
+      "jobId": "seed-job-1",
+      "issueKey": "QAP-SEED-1",
+      "status": "succeeded",
+      "completedAt": "2026-03-18T05:13:20.854888+00:00",
+      "retryCount": 1,
+      "finalOutcome": "passed",
+      "attempts": 2
+    },
+    {
+      "jobId": "seed-job-2",
+      "issueKey": "QAP-SEED-2",
+      "status": "succeeded",
+      "completedAt": "2026-03-18T05:13:20.854888+00:00",
+      "retryCount": 2,
+      "finalOutcome": "passed",
+      "attempts": 3
+    },
+    {
+      "jobId": "seed-job-3",
+      "issueKey": "QAP-SEED-3",
+      "status": "failed",
+      "completedAt": "2026-03-18T05:13:20.854888+00:00",
+      "retryCount": 2,
+      "finalOutcome": "escalated",
+      "attempts": 3
+    },
+    {
+      "jobId": "seed-job-4",
+      "issueKey": "QAP-SEED-4",
+      "status": "succeeded",
+      "completedAt": "2026-03-18T05:13:20.854888+00:00",
+      "retryCount": 0,
+      "finalOutcome": "passed",
+      "attempts": 1
+    },
+    {
+      "jobId": "seed-job-5",
+      "issueKey": "QAP-SEED-5",
+      "status": "failed",
+      "completedAt": "2026-03-18T05:13:20.854888+00:00",
+      "retryCount": 0,
+      "finalOutcome": "blocked",
+      "attempts": 1
+    }
+  ]
 }
