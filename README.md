@@ -6,9 +6,9 @@ AI-driven QA Agent Controller that turns Jira Acceptance Criteria into structure
 [![Python](https://img.shields.io/badge/Python-3.13-blue.svg)](app/requirements.txt)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg)](Dockerfile)
 [![Playwright](https://img.shields.io/badge/Playwright-tests-2EAD33.svg)](playwright-tests)
-[![Healing Rate](https://img.shields.io/endpoint?url=https://thulisa-n.github.io/qap-ai-qa-orchestrator/metrics/healing-rate.json)](https://thulisa-n.github.io/qap-ai-qa-orchestrator/metrics/healing-rate.json)
-[![Escalation Rate](https://img.shields.io/endpoint?url=https://thulisa-n.github.io/qap-ai-qa-orchestrator/metrics/escalation-rate.json)](https://thulisa-n.github.io/qap-ai-qa-orchestrator/metrics/escalation-rate.json)
-[![Average Attempts](https://img.shields.io/endpoint?url=https://thulisa-n.github.io/qap-ai-qa-orchestrator/metrics/average-attempts.json)](https://thulisa-n.github.io/qap-ai-qa-orchestrator/metrics/average-attempts.json)
+[![Healing Rate](https://img.shields.io/endpoint?url=https://thulisa-n.github.io/qap-ai-qa-orchestrator/metrics/healing-rate.json&cacheSeconds=300&v=20260318a)](https://thulisa-n.github.io/qap-ai-qa-orchestrator/metrics/healing-rate.json)
+[![Escalation Rate](https://img.shields.io/endpoint?url=https://thulisa-n.github.io/qap-ai-qa-orchestrator/metrics/escalation-rate.json&cacheSeconds=300&v=20260318a)](https://thulisa-n.github.io/qap-ai-qa-orchestrator/metrics/escalation-rate.json)
+[![Average Attempts](https://img.shields.io/endpoint?url=https://thulisa-n.github.io/qap-ai-qa-orchestrator/metrics/average-attempts.json&cacheSeconds=300&v=20260318a)](https://thulisa-n.github.io/qap-ai-qa-orchestrator/metrics/average-attempts.json)
 
 ## Quick Links
 - [Quickstart](#quickstart)
