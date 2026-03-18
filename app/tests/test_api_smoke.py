@@ -1094,6 +1094,33 @@ def test_dashboard_metrics_contract(monkeypatch):
         ]
 
     monkeypatch.setattr("app.src.routers.dashboard.list_jobs", _mock_list_jobs)
+    monkeypatch.setattr(
+        "app.src.routers.dashboard.list_healing_sessions",
+        lambda **kwargs: [
+            {
+                "sessionId": "job-s1:attempt:2",
+                "jobId": "job-s1",
+                "issueKey": "QAP-1",
+                "attempt": 2,
+                "strategy": "enhance_prompt_quality",
+                "status": "passed",
+                "scoreBefore": 0.41,
+                "scoreAfter": 0.82,
+                "createdAt": "2026-01-01T00:00:12Z",
+            },
+            {
+                "sessionId": "job-f1:attempt:3",
+                "jobId": "job-f1",
+                "issueKey": "QAP-2",
+                "attempt": 3,
+                "strategy": "add_consistency_constraints",
+                "status": "escalated",
+                "scoreBefore": 0.45,
+                "scoreAfter": 0.5,
+                "createdAt": "2026-01-01T00:00:06Z",
+            },
+        ],
+    )
 
     response = client.get(
         "/dashboard/metrics?sample_limit=50",
@@ -1108,12 +1135,20 @@ def test_dashboard_metrics_contract(monkeypatch):
     assert payload["validatorFailedCount"] == 1
     assert payload["automationTasksCreatedCount"] == 1
     assert payload["recentFailedJobs"][0]["jobId"] == "job-f1"
+    assert payload["healingTrends"]["stats"]["total"] == 2
+    assert payload["healingTrends"]["stats"]["passed"] == 1
+    assert payload["healingTrends"]["stats"]["escalated"] == 1
+    assert payload["healingTrends"]["stats"]["avgAttempt"] == 2.5
 
 
 def test_dashboard_html_view_contract(monkeypatch):
     client = _client_with_auth_token()
     monkeypatch.setattr(
         "app.src.routers.dashboard.list_jobs",
+        lambda **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "app.src.routers.dashboard.list_healing_sessions",
         lambda **kwargs: [],
     )
 
@@ -1124,6 +1159,8 @@ def test_dashboard_html_view_contract(monkeypatch):
     assert response.status_code == 200
     assert "QAP Operations Dashboard" in response.text
     assert "No failed jobs in sample." in response.text
+    assert "Healing Trends (Last 20 Sessions)" in response.text
+    assert "No healing sessions in sample." in response.text
 
 
 def test_healing_sessions_endpoint_contract(monkeypatch):

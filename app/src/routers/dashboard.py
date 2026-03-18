@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import HTMLResponse
 
 from app.src.security import require_api_key
-from app.src.services.job_service import list_jobs
+from app.src.services.job_service import list_healing_sessions, list_jobs
 
 
 router = APIRouter()
@@ -45,6 +45,21 @@ def _build_dashboard_metrics(*, sample_limit: int) -> dict[str, Any]:
         }
         for item in list_jobs(limit=10, status="failed")
     ]
+    healing_recent = list_healing_sessions(limit=20)
+    healing_stats = {
+        "total": len(healing_recent),
+        "passed": sum(1 for item in healing_recent if item.get("status") == "passed"),
+        "escalated": sum(1 for item in healing_recent if item.get("status") == "escalated"),
+        "avgAttempt": round(
+            (
+                sum(int(item.get("attempt") or 0) for item in healing_recent)
+                / len(healing_recent)
+            ),
+            2,
+        )
+        if healing_recent
+        else 0.0,
+    }
 
     success_rate = round((status_counts["succeeded"] / total), 2) if total else 0.0
     return {
@@ -56,6 +71,7 @@ def _build_dashboard_metrics(*, sample_limit: int) -> dict[str, Any]:
         "validatorFailedCount": validator_failed,
         "automationTasksCreatedCount": automation_tasks_created,
         "recentFailedJobs": failed_recent,
+        "healingTrends": {"stats": healing_stats, "recentSessions": healing_recent},
     }
 
 
@@ -89,6 +105,25 @@ def dashboard_view(
         "<table><thead><tr><th>Job ID</th><th>Issue</th><th>Error</th><th>Completed</th></tr></thead>"
         f"<tbody>{''.join(failed_rows) if failed_rows else '<tr><td colspan=4>No failed jobs in sample.</td></tr>'}</tbody></table>"
     )
+    healing_rows = []
+    for session in metrics["healingTrends"]["recentSessions"]:
+        healing_rows.append(
+            "<tr>"
+            f"<td>{escape(str(session.get('jobId', '-')))}</td>"
+            f"<td>{escape(str(session.get('issueKey', '-')))}</td>"
+            f"<td>{escape(str(session.get('attempt', '-')))}</td>"
+            f"<td>{escape(str(session.get('strategy', '-')))}</td>"
+            f"<td>{escape(str(session.get('status', '-')))}</td>"
+            f"<td>{escape(str(session.get('scoreBefore', '-')))}</td>"
+            f"<td>{escape(str(session.get('scoreAfter', '-')))}</td>"
+            "</tr>"
+        )
+    healing_table = (
+        "<table><thead><tr><th>Job ID</th><th>Issue</th><th>Attempt</th><th>Strategy</th>"
+        "<th>Status</th><th>Score Before</th><th>Score After</th></tr></thead>"
+        f"<tbody>{''.join(healing_rows) if healing_rows else '<tr><td colspan=7>No healing sessions in sample.</td></tr>'}</tbody></table>"
+    )
+    healing_stats = metrics["healingTrends"]["stats"]
 
     return f"""
 <!doctype html>
@@ -120,7 +155,13 @@ def dashboard_view(
       <div class="card"><div class="label">Governance Blocked</div><div class="value">{metrics["governanceBlockedCount"]}</div></div>
       <div class="card"><div class="label">Validator Failed</div><div class="value">{metrics["validatorFailedCount"]}</div></div>
       <div class="card"><div class="label">Automation Tasks Created</div><div class="value">{metrics["automationTasksCreatedCount"]}</div></div>
+      <div class="card"><div class="label">Healing Sessions (20)</div><div class="value">{healing_stats["total"]}</div></div>
+      <div class="card"><div class="label">Healing Passes</div><div class="value">{healing_stats["passed"]}</div></div>
+      <div class="card"><div class="label">Escalations</div><div class="value">{healing_stats["escalated"]}</div></div>
+      <div class="card"><div class="label">Avg Healing Attempt</div><div class="value">{healing_stats["avgAttempt"]}</div></div>
     </div>
+    <h2>Healing Trends (Last 20 Sessions)</h2>
+    {healing_table}
     <h2>Recent Failed Jobs</h2>
     {failed_table}
   </body>

@@ -249,4 +249,7 @@ Current delivery progress is tracked in `docs/implementation-checklist.md`.
 
 ### Next milestones (pending)
 - Automated bug triage issue creation from closed-loop failure analysis.
+- CI assertion that published GitHub Pages metrics endpoints return `200`.
+- Dashboard healing trend visualization (simple sparkline/mini chart).
+- Deterministic integration fixture proving at least one failed case auto-heals to pass.
 - Optional framework adapters (Cypress/Selenium) without changing core governance/agent contracts.

@@ -41,7 +41,7 @@ Use this as the working execution plan for daily progress.
   - optional filters: `issueKey`, `status`, `strategy`, `limit`.
 - [x] Add GitHub Pages metrics output (`docs/metrics/*.json`) from CI runs.
 - [x] Add README badges for healing KPIs (success rate, escalation rate, average attempts).
-- [ ] Add one dashboard section for healing trends (last 20 sessions).
+- [x] Add one dashboard section for healing trends (last 20 sessions).
 
 ## Optional "wow factor"
 
@@ -52,7 +52,7 @@ Use this as the working execution plan for daily progress.
 ## Definition of done for self-healing v2
 
 - [ ] At least one failed case auto-heals and passes without manual retry.
-- [ ] Retry loop stops at max attempts and escalates deterministically.
-- [ ] Every attempt is traceable via API and linked Jira comments.
-- [ ] Manual override is auditable and policy-bounded.
-- [ ] CI publishes healing metrics artifacts each run.
+- [x] Retry loop stops at max attempts and escalates deterministically.
+- [x] Every attempt is traceable via API and linked Jira comments.
+- [x] Manual override is auditable and policy-bounded.
+- [x] CI publishes healing metrics artifacts each run.
