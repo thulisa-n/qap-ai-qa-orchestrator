@@ -1,5 +1,5 @@
 # QAP AI QA Engine
-AI-driven QA Agent Controller that turns Jira Acceptance Criteria into structured QA outputs with human-in-the-loop governance.
+AI QA orchestration platform that converts Jira Acceptance Criteria into governed test artifacts, automation recommendations, and feedback-loop actions.
 
 [![CI](https://github.com/thulisa-n/qap-ai-qa-orchestrator/actions/workflows/ci.yml/badge.svg)](https://github.com/thulisa-n/qap-ai-qa-orchestrator/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -19,8 +19,34 @@ AI-driven QA Agent Controller that turns Jira Acceptance Criteria into structure
 - [Implementation Checklist](docs/implementation-checklist.md)
 - [Demo Video](docs/ai-qa-demo.mov)
 
-## What Problem This Solves
-QA teams lose time manually translating Jira Acceptance Criteria into test scenarios, deciding automation priority, and creating starter test code. QAP accelerates this flow while keeping final decisions with QA engineers.
+## What This Is (10 seconds)
+QAP is an **AI QA orchestration platform** for teams using Jira + CI/CD:
+- turns acceptance criteria into structured QA scenarios
+- recommends automation coverage with risk/governance gates
+- generates Playwright starter artifacts
+- closes the loop by classifying failed CI runs and feeding actions back to Jira
+
+This repository is intentionally focused on **QA orchestration and governance**. PKI-related endpoints are kept as an experimental extension (see [Product Scope](#product-scope)).
+
+## Why This Matters
+Teams lose time translating requirements into test plans, deciding what to automate, and triaging flaky/failed results. QAP reduces that manual overhead while preserving human QA control through critic, validator, remediation, and policy gates.
+
+## Who This Is For
+- QA engineers moving into AI-assisted automation workflows
+- engineering teams using Jira and CI/CD who need governance over AI output
+- platform/devops teams needing traceable quality decisions and audit-ready history
+
+## Product Scope
+### Core product (primary identity)
+- Jira-triggered QA orchestration
+- scenario + Playwright generation
+- critic/validator/remediation/governance gates
+- async jobs, traceability, explain-decision, healing sessions
+- closed-loop feedback from CI failures to Jira
+
+### Experimental extension
+- PKI profile endpoints (`/pki/*`) are marked as cross-domain extension experiments, not primary product scope.
+- For dedicated PKI compliance automation, use the separate project: `thulisa-n/pki-compliance-gate`.
 
 ## Demo in 60 Seconds
 1. Move a Jira issue to `In QA`.
@@ -32,6 +58,20 @@ QA teams lose time manually translating Jira Acceptance Criteria into test scena
    - AI QA Agent decision (automation recommendation + risk)
 4. QAP writes Playwright skeleton files and can create a linked automation task.
 5. QA reviews and approves implementation direction.
+
+## End-to-End Proof (Input -> Output)
+Example input:
+- Jira AC: "Valid credentials allow login and redirect to dashboard. Invalid credentials show clear error."
+
+Example QAP output:
+- 5+ structured test scenarios
+- coverage report (for example `0.8`)
+- critic + validator + governance decisions
+- automation recommendation with risk rationale
+- generated Playwright file path (for example `tests/auth/login.spec.js`)
+- traceable job state via `/jobs/{jobId}`, `/jobs/{jobId}/trace`, and `/jobs/{jobId}/explain-decision`
+
+This is the main "proof moment" for reviewers: requirement -> governed decision chain -> executable automation artifact.
 
 ## Demo Video
 [▶ Watch the 83-second walkthrough](docs/ai-qa-demo.mov)
@@ -165,9 +205,11 @@ Notes:
 - `POST /generate-both`
 - `POST /generate-qa-report` (structured QA report template from AC/requirements)
 - `POST /feedback/analyze-failures` (closed-loop failure triage: flake vs environment vs regression)
-- `POST /pki/validate-profile` (hybrid PKI policy-as-code profile validation demo)
-- `GET /pki/discover` (hybrid domain adapter: `demo|real_pki`)
 - `GET /health`
+
+### Experimental Extension Endpoints
+- `POST /pki/validate-profile` (experimental cross-domain extension)
+- `GET /pki/discover` (experimental cross-domain extension)
 
 ## Job Trace Example
 `GET /jobs/{jobId}/trace`
