@@ -28,13 +28,31 @@ QAP is an **AI QA orchestration platform** for teams using Jira + CI/CD:
 
 This repository is intentionally focused on **QA orchestration and governance**. PKI-related endpoints are kept as an experimental extension (see [Product Scope](#product-scope)).
 
+## Use Cases
+- Jira -> automated QA scenario generation from acceptance criteria
+- Governance-based automation decisions (allow/block with policy rationale)
+- CI failure triage and closed-loop Jira feedback comments
+- QA audit trail and traceability (`/jobs/{id}/trace`, `/healing/sessions`)
+
 ## Why This Matters
-Teams lose time translating requirements into test plans, deciding what to automate, and triaging flaky/failed results. QAP reduces that manual overhead while preserving human QA control through critic, validator, remediation, and policy gates.
+Without a governed QA orchestration layer, teams often hit:
+- delayed releases from manual test design and triage bottlenecks
+- poor or uneven test coverage across fast-moving backlog items
+- flaky pipelines with limited context for the next action
+- repeated QA effort and weak traceability for audits/reviews
+
+QAP reduces these risks while preserving human QA control through critic, validator, remediation, and policy gates.
 
 ## Who This Is For
 - QA engineers moving into AI-assisted automation workflows
 - engineering teams using Jira and CI/CD who need governance over AI output
 - platform/devops teams needing traceable quality decisions and audit-ready history
+
+## Where QAP Fits in Real Teams
+- Agile teams using Jira to manage acceptance-criteria-driven delivery
+- CI/CD pipelines running Playwright that need automated triage + feedback loops
+- QA teams scaling automation without losing governance controls
+- DevOps/platform environments that require traceable quality decisions
 
 ## Product Scope
 ### Core product (primary identity)
@@ -73,8 +91,25 @@ Example QAP output:
 
 This is the main "proof moment" for reviewers: requirement -> governed decision chain -> executable automation artifact.
 
+Example decision output snippet:
+```json
+{
+  "coverage": 0.8,
+  "automationRecommendation": "partial_automation",
+  "risk": "medium",
+  "governanceDecision": "allowed"
+}
+```
+
 ## Demo Video
 [▶ Watch the 83-second walkthrough](docs/ai-qa-demo.mov)
+
+## Architecture (Simple View)
+```text
+Jira ticket -> QAP orchestration -> Critic/Validator/Governance gates -> Jira + Playwright artifacts
+                                    |
+                                    -> Async trace + healing sessions + closed-loop feedback
+```
 
 ## Visual Architecture
 ```text
