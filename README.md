@@ -188,6 +188,9 @@ QAP implements a "Trust but Verify" pattern with three safety layers:
 - Security docs and evidence are in `docs/security-hardening-report.md`.
 - GitHub Actions uploads backend/playwright trace artifacts for transparent debugging in the Actions UI.
 
+## Prompt evals
+Live Gemini prompts are graded in CI by Promptfoo (`evals/`). The job blocks on assertion failures when `GEMINI_API_KEY` is available. Fork pull requests skip the live calls and print why, because GitHub does not pass repository secrets to them. See [evals/README.md](evals/README.md).
+
 ## GitHub Debug Transparency
 - Each GitHub Actions run publishes artifacts:
   - `backend-traces-<run_id>` (security/backend test logs)

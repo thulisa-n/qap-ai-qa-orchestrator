@@ -72,7 +72,7 @@ app/src/
 - Returns auditable gate decisions and policy violations for Jira comments/API responses.
 
 ### `services/*.py` (integration boundary)
-- `llm_service.py`: prompt builders and Gemini call wrapper.
+- `llm_service.py`: prompt builders load `app/src/prompts/` and wrap the Gemini call. The Promptfoo gate renders those same builders.
 - Also contains critic prompt construction for artifact quality validation.
 - Also includes feedback-analysis prompt construction for failed test triage.
 - `jira_service.py`: Jira auth, ADF formatting, issue/comment API calls with retry.
