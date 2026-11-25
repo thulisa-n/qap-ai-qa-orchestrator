@@ -18,7 +18,7 @@ QAP orchestrates Jira webhooks, AI generation, and file output. When something f
 - No structured logs with correlation IDs.
 - No centralized metrics for latency, failure rate, and throughput.
 - No alerting for background task failures.
-- No job status endpoint for async workflow visibility.
+- Job status is available (`GET /jobs/{jobId}`, `GET /jobs`, `GET /jobs/{jobId}/trace`), but there is no dedicated worker queue; background work still runs in-process.
 
 ## Recommended implementation
 

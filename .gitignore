@@ -1,5 +1,6 @@
 # Python
 .venv/
+app/.venv
 __pycache__/
 *.pyc
 
@@ -12,6 +13,7 @@ playwright-tests/.env
 # Node
 node_modules/
 package-lock.json
+!playwright-tests/package-lock.json
 
 # Playwright
 playwright-report/

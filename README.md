@@ -201,8 +201,8 @@ QAP is designed to be framework-extensible in future releases, but current imple
 
 ## Quickstart
 ```bash
-git clone <your-repo-url>
-cd ai-qa-engine
+git clone https://github.com/thulisa-n/qap-ai-qa-orchestrator.git
+cd qap-ai-qa-orchestrator
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r app/requirements.txt
