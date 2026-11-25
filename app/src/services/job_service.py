@@ -1,88 +1,6 @@
-import json
-import sqlite3
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from threading import Lock
 from typing import Any
 
-from app.src.settings import get_settings
-
-
-_LOCK = Lock()
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _db_path() -> Path:
-    return Path(get_settings().job_db_path).resolve()
-
-
-def _ensure_db() -> Path:
-    path = _db_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(path) as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS jobs (
-                job_id TEXT PRIMARY KEY,
-                issue_key TEXT NOT NULL,
-                status TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                started_at TEXT,
-                completed_at TEXT,
-                result_json TEXT,
-                request_json TEXT,
-                error TEXT
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS healing_sessions (
-                session_id TEXT PRIMARY KEY,
-                job_id TEXT NOT NULL,
-                issue_key TEXT NOT NULL,
-                attempt INTEGER NOT NULL,
-                strategy TEXT NOT NULL,
-                status TEXT NOT NULL,
-                score_before REAL,
-                score_after REAL,
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-        columns = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
-        if "request_json" not in columns:
-            conn.execute("ALTER TABLE jobs ADD COLUMN request_json TEXT")
-        conn.commit()
-    return path
-
-
-def _row_to_job(row: tuple[Any, ...]) -> dict[str, Any]:
-    (
-        job_id,
-        issue_key,
-        status,
-        created_at,
-        started_at,
-        completed_at,
-        result_json,
-        request_json,
-        error,
-    ) = row
-    return {
-        "jobId": job_id,
-        "issueKey": issue_key,
-        "status": status,
-        "createdAt": created_at,
-        "startedAt": started_at,
-        "completedAt": completed_at,
-        "result": json.loads(result_json) if result_json else None,
-        "requestPayload": json.loads(request_json) if request_json else None,
-        "error": error,
-    }
+from app.src.stores import get_job_store
 
 
 def create_job(
@@ -91,136 +9,35 @@ def create_job(
     issue_key: str,
     request_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    job = {
-        "jobId": job_id,
-        "issueKey": issue_key,
-        "status": "pending",
-        "createdAt": _utc_now_iso(),
-        "startedAt": None,
-        "completedAt": None,
-        "result": None,
-        "requestPayload": request_payload,
-        "error": None,
-    }
-    db_path = _ensure_db()
-    with _LOCK:
-        with sqlite3.connect(db_path) as conn:
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO jobs (
-                    job_id, issue_key, status, created_at, started_at, completed_at, result_json, request_json, error
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    job["jobId"],
-                    job["issueKey"],
-                    job["status"],
-                    job["createdAt"],
-                    job["startedAt"],
-                    job["completedAt"],
-                    None,
-                    json.dumps(request_payload) if request_payload else None,
-                    None,
-                ),
-            )
-            conn.commit()
-    return job
+    return get_job_store().create_job(
+        job_id=job_id,
+        issue_key=issue_key,
+        request_payload=request_payload,
+    )
 
 
 def mark_job_running(job_id: str) -> None:
-    db_path = _ensure_db()
-    with _LOCK:
-        with sqlite3.connect(db_path) as conn:
-            conn.execute(
-                """
-                UPDATE jobs
-                SET status = ?, started_at = ?
-                WHERE job_id = ?
-                """,
-                ("running", _utc_now_iso(), job_id),
-            )
-            conn.commit()
+    get_job_store().mark_job_running(job_id)
 
 
 def mark_job_succeeded(job_id: str, result: dict[str, Any]) -> None:
-    db_path = _ensure_db()
-    with _LOCK:
-        with sqlite3.connect(db_path) as conn:
-            conn.execute(
-                """
-                UPDATE jobs
-                SET status = ?, completed_at = ?, result_json = ?, error = NULL
-                WHERE job_id = ?
-                """,
-                ("succeeded", _utc_now_iso(), json.dumps(result), job_id),
-            )
-            conn.commit()
+    get_job_store().mark_job_succeeded(job_id, result)
 
 
 def mark_job_failed(job_id: str, error: str) -> None:
-    db_path = _ensure_db()
-    with _LOCK:
-        with sqlite3.connect(db_path) as conn:
-            conn.execute(
-                """
-                UPDATE jobs
-                SET status = ?, completed_at = ?, error = ?
-                WHERE job_id = ?
-                """,
-                ("failed", _utc_now_iso(), error, job_id),
-            )
-            conn.commit()
+    get_job_store().mark_job_failed(job_id, error)
 
 
 def get_job(job_id: str) -> dict[str, Any] | None:
-    db_path = _ensure_db()
-    with _LOCK:
-        with sqlite3.connect(db_path) as conn:
-            row = conn.execute(
-                """
-                SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, request_json, error
-                FROM jobs
-                WHERE job_id = ?
-                """,
-                (job_id,),
-            ).fetchone()
-            if not row:
-                return None
-            return _row_to_job(row)
+    return get_job_store().get_job(job_id)
 
 
 def get_job_trace(job_id: str) -> dict[str, Any] | None:
-    job = get_job(job_id)
-    if not job:
-        return None
-    result = job.get("result") or {}
-    return {
-        "jobId": job["jobId"],
-        "issueKey": job["issueKey"],
-        "status": job["status"],
-        "executionTrace": result.get("executionTrace"),
-        "criticDecision": result.get("criticDecision"),
-        "validatorDecision": result.get("validatorDecision"),
-        "remediationDecision": result.get("remediationDecision"),
-        "governanceDecision": result.get("governanceDecision"),
-        "decisionExplanation": result.get("decisionExplanation"),
-        "error": job.get("error"),
-    }
+    return get_job_store().get_job_trace(job_id)
 
 
 def update_job_result(job_id: str, result: dict[str, Any]) -> None:
-    db_path = _ensure_db()
-    with _LOCK:
-        with sqlite3.connect(db_path) as conn:
-            conn.execute(
-                """
-                UPDATE jobs
-                SET result_json = ?
-                WHERE job_id = ?
-                """,
-                (json.dumps(result), job_id),
-            )
-            conn.commit()
+    get_job_store().update_job_result(job_id, result)
 
 
 def list_jobs(
@@ -229,80 +46,11 @@ def list_jobs(
     status: str | None = None,
     issue_key: str | None = None,
 ) -> list[dict[str, Any]]:
-    db_path = _ensure_db()
-    params: tuple[Any, ...]
-    if status and issue_key:
-        sql = """
-            SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, request_json, error
-            FROM jobs
-            WHERE status = ? AND issue_key = ?
-            ORDER BY created_at DESC
-            LIMIT ?
-        """
-        params = (status, issue_key, limit)
-    elif status:
-        sql = """
-            SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, request_json, error
-            FROM jobs
-            WHERE status = ?
-            ORDER BY created_at DESC
-            LIMIT ?
-        """
-        params = (status, limit)
-    elif issue_key:
-        sql = """
-            SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, request_json, error
-            FROM jobs
-            WHERE issue_key = ?
-            ORDER BY created_at DESC
-            LIMIT ?
-        """
-        params = (issue_key, limit)
-    else:
-        sql = """
-            SELECT job_id, issue_key, status, created_at, started_at, completed_at, result_json, request_json, error
-            FROM jobs
-            ORDER BY created_at DESC
-            LIMIT ?
-        """
-        params = (limit,)
-
-    with _LOCK:
-        with sqlite3.connect(db_path) as conn:
-            rows = conn.execute(sql, params).fetchall()
-            return [_row_to_job(row) for row in rows]
+    return get_job_store().list_jobs(limit=limit, status=status, issue_key=issue_key)
 
 
 def cleanup_jobs(*, older_than_days: int = 30, status: str | None = None) -> dict[str, int]:
-    cutoff = datetime.now(timezone.utc) - timedelta(days=older_than_days)
-    db_path = _ensure_db()
-    with _LOCK:
-        with sqlite3.connect(db_path) as conn:
-            if status:
-                rows = conn.execute(
-                    "SELECT job_id, created_at FROM jobs WHERE status = ?",
-                    (status,),
-                ).fetchall()
-            else:
-                rows = conn.execute("SELECT job_id, created_at FROM jobs").fetchall()
-
-            to_delete: list[str] = []
-            for job_id, created_at in rows:
-                if not created_at:
-                    continue
-                created_dt = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
-                if created_dt < cutoff:
-                    to_delete.append(str(job_id))
-
-            if to_delete:
-                conn.executemany("DELETE FROM jobs WHERE job_id = ?", [(job_id,) for job_id in to_delete])
-                conn.executemany(
-                    "DELETE FROM healing_sessions WHERE job_id = ?",
-                    [(job_id,) for job_id in to_delete],
-                )
-                conn.commit()
-
-    return {"deleted": len(to_delete), "evaluated": len(rows)}
+    return get_job_store().cleanup_jobs(older_than_days=older_than_days, status=status)
 
 
 def upsert_healing_sessions(
@@ -311,47 +59,7 @@ def upsert_healing_sessions(
     issue_key: str,
     attempts: list[dict[str, Any]],
 ) -> None:
-    if not attempts:
-        return
-
-    db_path = _ensure_db()
-    now_iso = _utc_now_iso()
-    rows: list[tuple[Any, ...]] = []
-    for attempt in attempts:
-        attempt_number = int(attempt.get("attemptNumber") or 0)
-        if attempt_number <= 0:
-            continue
-        strategy = str(attempt.get("healStrategy") or attempt.get("strategy") or "unknown")
-        status = str(attempt.get("outcome") or "unknown")
-        rows.append(
-            (
-                f"{job_id}:attempt:{attempt_number}",
-                job_id,
-                issue_key,
-                attempt_number,
-                strategy,
-                status,
-                attempt.get("scoreBefore"),
-                attempt.get("scoreAfter"),
-                now_iso,
-            )
-        )
-
-    if not rows:
-        return
-
-    with _LOCK:
-        with sqlite3.connect(db_path) as conn:
-            conn.execute("DELETE FROM healing_sessions WHERE job_id = ?", (job_id,))
-            conn.executemany(
-                """
-                INSERT OR REPLACE INTO healing_sessions (
-                    session_id, job_id, issue_key, attempt, strategy, status, score_before, score_after, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                rows,
-            )
-            conn.commit()
+    get_job_store().upsert_healing_sessions(job_id=job_id, issue_key=issue_key, attempts=attempts)
 
 
 def list_healing_sessions(
@@ -361,106 +69,9 @@ def list_healing_sessions(
     status: str | None = None,
     strategy: str | None = None,
 ) -> list[dict[str, Any]]:
-    db_path = _ensure_db()
-    params: tuple[Any, ...]
-    if issue_key and status and strategy:
-        sql = """
-            SELECT session_id, job_id, issue_key, attempt, strategy, status, score_before, score_after, created_at
-            FROM healing_sessions
-            WHERE issue_key = ? AND status = ? AND strategy = ?
-            ORDER BY created_at DESC, attempt DESC
-            LIMIT ?
-        """
-        params = (issue_key, status, strategy, limit)
-    elif issue_key and status:
-        sql = """
-            SELECT session_id, job_id, issue_key, attempt, strategy, status, score_before, score_after, created_at
-            FROM healing_sessions
-            WHERE issue_key = ? AND status = ?
-            ORDER BY created_at DESC, attempt DESC
-            LIMIT ?
-        """
-        params = (issue_key, status, limit)
-    elif issue_key and strategy:
-        sql = """
-            SELECT session_id, job_id, issue_key, attempt, strategy, status, score_before, score_after, created_at
-            FROM healing_sessions
-            WHERE issue_key = ? AND strategy = ?
-            ORDER BY created_at DESC, attempt DESC
-            LIMIT ?
-        """
-        params = (issue_key, strategy, limit)
-    elif status and strategy:
-        sql = """
-            SELECT session_id, job_id, issue_key, attempt, strategy, status, score_before, score_after, created_at
-            FROM healing_sessions
-            WHERE status = ? AND strategy = ?
-            ORDER BY created_at DESC, attempt DESC
-            LIMIT ?
-        """
-        params = (status, strategy, limit)
-    elif issue_key:
-        sql = """
-            SELECT session_id, job_id, issue_key, attempt, strategy, status, score_before, score_after, created_at
-            FROM healing_sessions
-            WHERE issue_key = ?
-            ORDER BY created_at DESC, attempt DESC
-            LIMIT ?
-        """
-        params = (issue_key, limit)
-    elif status:
-        sql = """
-            SELECT session_id, job_id, issue_key, attempt, strategy, status, score_before, score_after, created_at
-            FROM healing_sessions
-            WHERE status = ?
-            ORDER BY created_at DESC, attempt DESC
-            LIMIT ?
-        """
-        params = (status, limit)
-    elif strategy:
-        sql = """
-            SELECT session_id, job_id, issue_key, attempt, strategy, status, score_before, score_after, created_at
-            FROM healing_sessions
-            WHERE strategy = ?
-            ORDER BY created_at DESC, attempt DESC
-            LIMIT ?
-        """
-        params = (strategy, limit)
-    else:
-        sql = """
-            SELECT session_id, job_id, issue_key, attempt, strategy, status, score_before, score_after, created_at
-            FROM healing_sessions
-            ORDER BY created_at DESC, attempt DESC
-            LIMIT ?
-        """
-        params = (limit,)
-    with _LOCK:
-        with sqlite3.connect(db_path) as conn:
-            rows = conn.execute(sql, params).fetchall()
-            sessions: list[dict[str, Any]] = []
-            for row in rows:
-                (
-                    session_id,
-                    row_job_id,
-                    row_issue_key,
-                    attempt,
-                    row_strategy,
-                    row_status,
-                    score_before,
-                    score_after,
-                    created_at,
-                ) = row
-                sessions.append(
-                    {
-                        "sessionId": session_id,
-                        "jobId": row_job_id,
-                        "issueKey": row_issue_key,
-                        "attempt": attempt,
-                        "strategy": row_strategy,
-                        "status": row_status,
-                        "scoreBefore": score_before,
-                        "scoreAfter": score_after,
-                        "createdAt": created_at,
-                    }
-                )
-            return sessions
+    return get_job_store().list_healing_sessions(
+        limit=limit,
+        issue_key=issue_key,
+        status=status,
+        strategy=strategy,
+    )

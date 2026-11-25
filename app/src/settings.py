@@ -21,6 +21,7 @@ class Settings:
     jira_api_token: str | None
     jira_project_key: str | None
     base_url: str | None
+    job_store_backend: str
     job_db_path: str
 
 
@@ -36,5 +37,6 @@ def get_settings() -> Settings:
         jira_api_token=os.getenv("JIRA_API_TOKEN"),
         jira_project_key=os.getenv("JIRA_PROJECT_KEY"),
         base_url=os.getenv("BASE_URL"),
+        job_store_backend=os.getenv("JOB_STORE_BACKEND", "sqlite"),
         job_db_path=os.getenv("JOB_DB_PATH", default_job_db_path),
     )

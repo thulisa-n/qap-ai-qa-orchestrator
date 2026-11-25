@@ -225,7 +225,7 @@ Open:
 - Health: `http://127.0.0.1:8000/health`
 
 Notes:
-- Async job tracking is persisted in SQLite at `JOB_DB_PATH` (default: `app/.data/jobs.db`).
+- Async job tracking is persisted in SQLite at `JOB_DB_PATH` (default: `app/.data/jobs.db`). `JOB_STORE_BACKEND` defaults to `sqlite`.
 - In Docker, job data is persisted via the `qap_job_data` volume.
 
 ## Core Endpoints

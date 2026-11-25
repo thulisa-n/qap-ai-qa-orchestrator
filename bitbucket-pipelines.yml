@@ -11,7 +11,7 @@ definitions:
         script:
           - pip install -r app/requirements.txt
           - pip install bandit==1.9.4 pip-audit==2.10.1
-          - python -m py_compile app/src/*.py app/src/routers/*.py app/src/services/*.py app/src/governance/*.py app/src/agents/*.py app/src/domain/*.py
+          - python -m py_compile app/src/*.py app/src/routers/*.py app/src/services/*.py app/src/stores/*.py app/src/governance/*.py app/src/agents/*.py app/src/domain/*.py
           - python -c "from app.src.app import app; print('FastAPI app import OK:', bool(app))"
           - PYTHONPATH=. python -m pytest app/tests/test_security.py -q > security-test.log 2>&1 || (cat security-test.log && exit 1)
           - cat security-test.log
