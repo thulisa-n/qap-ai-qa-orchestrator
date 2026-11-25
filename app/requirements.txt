@@ -5,3 +5,4 @@ google-genai==3.6.1
 python-dotenv==1.2.4
 requests==2.34.2
 pytest==9.2.0
+boto3==1.44.11

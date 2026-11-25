@@ -23,6 +23,9 @@ class Settings:
     base_url: str | None
     job_store_backend: str
     job_db_path: str
+    dynamodb_endpoint: str | None
+    dynamodb_table: str
+    aws_default_region: str
 
 
 @lru_cache(maxsize=1)
@@ -39,4 +42,7 @@ def get_settings() -> Settings:
         base_url=os.getenv("BASE_URL"),
         job_store_backend=os.getenv("JOB_STORE_BACKEND", "sqlite"),
         job_db_path=os.getenv("JOB_DB_PATH", default_job_db_path),
+        dynamodb_endpoint=os.getenv("DYNAMODB_ENDPOINT") or None,
+        dynamodb_table=os.getenv("DYNAMODB_TABLE", "qap-store"),
+        aws_default_region=os.getenv("AWS_DEFAULT_REGION") or os.getenv("AWS_REGION") or "us-east-1",
     )
