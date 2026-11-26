@@ -30,7 +30,7 @@ jobs:
         run: pip install -r app/requirements.txt
 
       - name: Compile backend modules
-        run: python -m py_compile app/src/*.py app/src/routers/*.py app/src/services/*.py app/src/governance/*.py app/src/agents/*.py app/src/domain/*.py
+        run: python -m py_compile app/src/*.py app/src/routers/*.py app/src/services/*.py app/src/stores/*.py app/src/governance/*.py app/src/agents/*.py app/src/domain/*.py
 
       - name: Import FastAPI app
         run: python -c "from app.src.app import app; print('FastAPI app import OK:', bool(app))"

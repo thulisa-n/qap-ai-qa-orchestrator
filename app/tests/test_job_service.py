@@ -1,3 +1,5 @@
+import pytest
+
 from app.src.services.job_service import (
     create_job,
     get_job,
@@ -9,6 +11,29 @@ from app.src.services.job_service import (
     upsert_healing_sessions,
 )
 from app.src.settings import get_settings
+from app.src.stores import get_job_store
+from app.src.stores.sqlite_store import SqliteJobStore
+
+
+def test_default_job_store_is_sqlite(monkeypatch, tmp_path):
+    monkeypatch.delenv("JOB_STORE_BACKEND", raising=False)
+    monkeypatch.setenv("JOB_DB_PATH", str(tmp_path / "jobs.db"))
+    get_settings.cache_clear()
+    try:
+        store = get_job_store()
+        assert isinstance(store, SqliteJobStore)
+    finally:
+        get_settings.cache_clear()
+
+
+def test_unknown_job_store_backend_fails(monkeypatch):
+    monkeypatch.setenv("JOB_STORE_BACKEND", "memory")
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(RuntimeError, match="Unknown JOB_STORE_BACKEND"):
+            get_job_store()
+    finally:
+        get_settings.cache_clear()
 
 
 def test_job_service_persists_state_in_sqlite(monkeypatch, tmp_path):
