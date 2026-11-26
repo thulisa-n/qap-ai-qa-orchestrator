@@ -1,0 +1,14 @@
+{
+  "name": "qap-llm-evals",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Promptfoo release gate for QAP's live Gemini prompts.",
+  "scripts": {
+    "eval": "promptfoo eval -c promptfooconfig.yaml",
+    "eval:ci": "promptfoo eval -c promptfooconfig.yaml --no-write",
+    "redteam:ci": "promptfoo redteam run -c promptfooconfig.yaml -o ../redteam-output.json"
+  },
+  "devDependencies": {
+    "promptfoo": "0.126.0"
+  }
+}

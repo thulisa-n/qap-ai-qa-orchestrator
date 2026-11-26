@@ -1,0 +1,135 @@
+name: LLM evals
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  llm-evals:
+    name: Gemini prompt evals
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect prompt and eval changes
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          if [ -z "${BASE}" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only "$BASE" HEAD > /tmp/changed-files.txt
+          if grep -Eq '^(evals/|app/src/prompts/|app/src/services/llm_service.py|app/src/agents/|\.github/workflows/llm-evals\.yml)' /tmp/changed-files.txt; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "## Gemini evals skipped"
+              echo ""
+              echo "This change does not touch prompts, agents, or the eval workflow, so the live Gemini gate did not run."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Setup Python
+        if: steps.changes.outputs.run == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: app/requirements.txt
+
+      - name: Install Python dependencies
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          pip install -r app/requirements.txt
+          pip install apisec-ai-surface==1.1.1
+
+      - name: Static AI surface scan
+        if: steps.changes.outputs.run == 'true'
+        run: ai-surface scan . --fail-on high
+
+      - name: Check GEMINI_API_KEY
+        id: gemini
+        if: steps.changes.outputs.run == 'true'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${GEMINI_API_KEY}" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=GEMINI_API_KEY missing::Skipping live Gemini evals. Fork pull requests cannot read repository secrets. Add the GEMINI_API_KEY secret, then re-run from a maintainer branch or workflow_dispatch."
+            {
+              echo "## Gemini evals skipped"
+              echo ""
+              echo "GEMINI_API_KEY is not available to this run, so Promptfoo evals and the red team did not call Gemini."
+              echo "This is expected on fork pull requests. Add the repository secret GEMINI_API_KEY, then re-run on a maintainer branch or via workflow_dispatch."
+              echo "The static ai-surface scan still ran."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        if: steps.changes.outputs.run == 'true' && steps.gemini.outputs.available == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: evals/package-lock.json
+
+      - name: Install Promptfoo
+        if: steps.changes.outputs.run == 'true' && steps.gemini.outputs.available == 'true'
+        working-directory: evals
+        run: npm ci
+
+      - name: Run Promptfoo evals
+        if: steps.changes.outputs.run == 'true' && steps.gemini.outputs.available == 'true'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PYTHONPATH: ${{ github.workspace }}
+        run: npx --prefix evals promptfoo eval -c evals/promptfooconfig.yaml --no-write
+
+      - name: Run Promptfoo red team
+        if: steps.changes.outputs.run == 'true' && steps.gemini.outputs.available == 'true'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PYTHONPATH: ${{ github.workspace }}
+        run: npx --prefix evals promptfoo redteam run -c evals/promptfooconfig.yaml -o redteam-output.json
+
+      - name: Upload red team results
+        if: always() && steps.changes.outputs.run == 'true' && steps.gemini.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: redteam-results
+          path: redteam-output.json
+          if-no-files-found: ignore
+
+      - name: Eval summary
+        if: always() && steps.changes.outputs.run == 'true' && steps.gemini.outputs.available == 'true'
+        shell: bash
+        run: |
+          {
+            echo "## Gemini evals"
+            echo ""
+            echo "- Promptfoo: schema, hallucination, Jira acceptance-criteria injection, credential hygiene, latency and cost caps."
+            echo "- Red team: system-prompt-override, hijacking, hallucination (3 tests each)."
+            echo "- Provider: google:gemini-3.8-flash. Secret: GEMINI_API_KEY only."
+          } >> "$GITHUB_STEP_SUMMARY"
