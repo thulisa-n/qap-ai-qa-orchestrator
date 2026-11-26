@@ -1,4 +1,13 @@
 services:
+  dynamodb-local:
+    image: amazon/dynamodb-local:3.3.2
+    profiles: ["dynamodb"]
+    container_name: qap-dynamodb-local
+    command: "-jar DynamoDBLocal.jar -inMemory -sharedDb"
+    working_dir: /home/dynamodblocal
+    ports:
+      - "8001:8000"
+
   qap-api:
     build:
       context: .
@@ -10,6 +19,13 @@ services:
       - app/.env
     environment:
       - JOB_DB_PATH=/workspace/app/.data/jobs.db
+      # Default backend stays SQLite. For DynamoDB Local, start the profile and set:
+      # JOB_STORE_BACKEND=dynamodb
+      # DYNAMODB_ENDPOINT=http://dynamodb-local:8000
+      # DYNAMODB_TABLE=qap-store
+      # AWS_ACCESS_KEY_ID=local
+      # AWS_SECRET_ACCESS_KEY=local
+      # AWS_DEFAULT_REGION=us-east-1
     volumes:
       - qap_job_data:/workspace/app/.data
     restart: unless-stopped

@@ -228,6 +228,45 @@ Notes:
 - Async job tracking is persisted in SQLite at `JOB_DB_PATH` (default: `app/.data/jobs.db`). `JOB_STORE_BACKEND` defaults to `sqlite`.
 - In Docker, job data is persisted via the `qap_job_data` volume.
 
+## DynamoDB Local
+
+SQLite stays the default. DynamoDB is an opt-in adapter for local development and CI. It uses [DynamoDB Local](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.html) in Docker. No AWS account is required, and the credentials below are dummy values.
+
+```bash
+docker compose --profile dynamodb up -d dynamodb-local
+python scripts/create_dynamodb_tables.py
+```
+
+The container publishes host port **8001** (the API already uses 8000). From the host:
+
+```bash
+export JOB_STORE_BACKEND=dynamodb
+export DYNAMODB_ENDPOINT=http://127.0.0.1:8001
+export DYNAMODB_TABLE=qap-store
+export AWS_ACCESS_KEY_ID=local
+export AWS_SECRET_ACCESS_KEY=local
+export AWS_DEFAULT_REGION=us-east-1
+PYTHONPATH=. python -m pytest app/tests -q -m dynamodb
+```
+
+From the `qap-api` container the endpoint is `http://dynamodb-local:8000`. `-sharedDb` is set so every dummy access key sees the same tables. Data is in memory and disappears with the container.
+
+`JOB_STORE_BACKEND=dynamodb` with an empty `DYNAMODB_ENDPOINT` refuses to start. That stops a typo from calling real AWS.
+
+### Real AWS later
+
+Do not do this for the current project. The adapter is only exercised against DynamoDB Local.
+
+If you later point the same adapter at AWS:
+
+1. Create an AWS account only if you choose to. It asks for a payment card even on the free tier.
+2. Leave `DYNAMODB_ENDPOINT` unset so boto3 uses the regional endpoint. Do not point production at Local.
+3. Use an IAM role, or a tightly scoped user, with access only to the `qap-store` table. Do not put long-lived keys in GitHub or `.env`.
+4. Create the table with the same pk/sk/GSI shape (`scripts/create_dynamodb_tables.py` shows the shape).
+5. Set a budget alert at **$1** and a billing alarm before creating anything. Delete the table and the alarms when the demo ends.
+6. Stay inside the DynamoDB free tier and keep traffic near zero.
+7. Prefer DynamoDB TTL (`expires_at`) for cleanup instead of scanning and deleting. TTL is the production approach. Local and CI use explicit deletes because the data is disposable.
+
 ## Core Endpoints
 - `POST /jira/full-qa-flow-async` (recommended webhook target)
 - `GET /jobs/{jobId}` (async QA flow status: `pending|running|succeeded|failed`)
