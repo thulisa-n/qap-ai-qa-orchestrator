@@ -1,8 +1,7 @@
-fastapi
-uvicorn
-pydantic
-google-genai
-python-dotenv
-requests
-pytest
-
+fastapi==0.165.0
+uvicorn==0.54.0
+pydantic==2.14.4
+google-genai==3.6.1
+python-dotenv==1.2.4
+requests==2.34.2
+pytest==9.2.0

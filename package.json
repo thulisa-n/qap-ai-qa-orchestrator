@@ -1,5 +1,5 @@
 {
-  "name": "ai-qa-engine",
+  "name": "qap-ai-qa-orchestrator",
   "version": "1.0.0",
   "description": "AI-driven QA Automation Platform (QAP) that converts Jira tickets into: - Manual test scenarios - High-value automation candidates - Playwright test names - Security-minded QA notes",
   "main": "index.js",

@@ -29,7 +29,7 @@ def get_settings() -> Settings:
     default_job_db_path = str(BASE_DIR / ".data" / "jobs.db")
     return Settings(
         gemini_api_key=os.getenv("GEMINI_API_KEY"),
-        gemini_model=os.getenv("GEMINI_MODEL", "models/gemini-2.5-flash"),
+        gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.8-flash"),
         api_auth_token=os.getenv("API_AUTH_TOKEN"),
         jira_base_url=os.getenv("JIRA_BASE_URL"),
         jira_email=os.getenv("JIRA_EMAIL"),

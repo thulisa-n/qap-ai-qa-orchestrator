@@ -11,7 +11,7 @@ Thanks for contributing to QAP AI QA Engine.
    - `pip install -r app/requirements.txt`
 4. Install Playwright dependencies:
    - `cd playwright-tests`
-   - `npm install`
+   - `npm ci`
    - `npx playwright install`
 
 ## Run checks before opening a PR

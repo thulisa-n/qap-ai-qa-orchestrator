@@ -73,7 +73,7 @@ app/src/
 - Also includes feedback-analysis prompt construction for failed test triage.
 - `jira_service.py`: Jira auth, ADF formatting, issue/comment API calls with retry.
 - `file_service.py`: Playwright file write behavior.
-- `job_service.py`: in-memory async job tracking for status visibility.
+- `job_service.py`: SQLite-backed async job tracking (`JOB_DB_PATH`, default `app/.data/jobs.db`) for status, trace, and healing-session visibility.
 - `pki_policy_service.py`: policy-as-code validation for PKI profile checks.
 - Encapsulates external API details so route code stays stable.
 
