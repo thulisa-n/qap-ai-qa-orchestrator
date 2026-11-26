@@ -29,6 +29,7 @@ app/src/
   stores/
     protocol.py
     sqlite_store.py
+    dynamodb_store.py
 ```
 
 ## How requests flow
@@ -76,7 +77,7 @@ app/src/
 - Also includes feedback-analysis prompt construction for failed test triage.
 - `jira_service.py`: Jira auth, ADF formatting, issue/comment API calls with retry.
 - `file_service.py`: Playwright file write behavior.
-- `job_service.py`: stable function wrappers over `stores/`. The default backend is SQLite (`JOB_STORE_BACKEND=sqlite`, `JOB_DB_PATH`, default `app/.data/jobs.db`) for status, trace, and healing-session visibility.
+- `job_service.py`: stable function wrappers over `stores/`. The default backend is SQLite (`JOB_STORE_BACKEND=sqlite`, `JOB_DB_PATH`, default `app/.data/jobs.db`). `JOB_STORE_BACKEND=dynamodb` uses DynamoDB Local when `DYNAMODB_ENDPOINT` is set, and refuses to start when that endpoint is missing.
 - `pki_policy_service.py`: policy-as-code validation for PKI profile checks.
 - Encapsulates external API details so route code stays stable.
 
